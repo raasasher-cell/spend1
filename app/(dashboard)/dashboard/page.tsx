@@ -1,5 +1,6 @@
 "use client";
-import { KPI_DATA, ALERTS, CASES } from "@/lib/mock-data";
+import { useStore, computeKPIs } from "@/lib/store";
+import { KPI_DATA } from "@/lib/mock-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/ui/badge";
 import { formatDate, isOverdue } from "@/lib/utils";
@@ -11,26 +12,46 @@ import {
 } from "recharts";
 import Link from "next/link";
 
-const kpiCards = [
-  { label: "Open Alerts", value: KPI_DATA.openAlerts, icon: Bell, color: "text-blue-600", bg: "bg-blue-50", href: "/alerts" },
-  { label: "Open Cases", value: KPI_DATA.openCases, icon: Briefcase, color: "text-purple-600", bg: "bg-purple-50", href: "/cases" },
-  { label: "Past Due SLAs", value: KPI_DATA.pastDueSLAs, icon: Clock, color: "text-red-600", bg: "bg-red-50", href: "/alerts" },
-  { label: "KYC Manual Reviews", value: KPI_DATA.kycManualReviews, icon: UserCheck, color: "text-amber-600", bg: "bg-amber-50", href: "/alerts?source=KYC" },
-  { label: "Screening Hits", value: KPI_DATA.screeningHits, icon: ShieldAlert, color: "text-orange-600", bg: "bg-orange-50", href: "/customers" },
-  { label: "SAR Reviews Due", value: KPI_DATA.sarReviewsDue, icon: FileText, color: "text-rose-600", bg: "bg-rose-50", href: "/sar-reviews" },
-  { label: "Avg Case Age", value: `${KPI_DATA.avgCaseAgeDays}d`, icon: Timer, color: "text-teal-600", bg: "bg-teal-50", href: "/kpi-reports" },
-  { label: "SLA Breach Rate", value: `${KPI_DATA.slaBreach}%`, icon: TrendingUp, color: "text-slate-600", bg: "bg-slate-100", href: "/kpi-reports" },
-];
-
 const COLORS = ["#3b82f6", "#f97316", "#eab308", "#22c55e", "#ef4444", "#8b5cf6", "#06b6d4"];
 
-const recentAlerts = ALERTS.filter(a => a.status === "Open" || a.status === "In Review")
-  .sort((a, b) => new Date(b.createdDate).getTime() - new Date(a.createdDate).getTime())
-  .slice(0, 5);
-
-const criticalCases = CASES.filter(c => c.priority === "Critical" && c.status !== "Closed").slice(0, 5);
-
 export default function DashboardPage() {
+  const { state } = useStore();
+  const kpis = computeKPIs(state);
+
+  const kpiCards = [
+    { label: "Open Alerts", value: kpis.openAlerts, icon: Bell, color: "text-blue-600", bg: "bg-blue-50", href: "/alerts" },
+    { label: "Open Cases", value: kpis.openCases, icon: Briefcase, color: "text-purple-600", bg: "bg-purple-50", href: "/cases" },
+    { label: "Past Due SLAs", value: kpis.pastDueSLAs, icon: Clock, color: "text-red-600", bg: "bg-red-50", href: "/alerts" },
+    { label: "KYC Manual Reviews", value: kpis.kycManualReviews, icon: UserCheck, color: "text-amber-600", bg: "bg-amber-50", href: "/alerts" },
+    { label: "Screening Hits", value: KPI_DATA.screeningHits, icon: ShieldAlert, color: "text-orange-600", bg: "bg-orange-50", href: "/customers" },
+    { label: "SAR Reviews Due", value: kpis.sarReviewsDue, icon: FileText, color: "text-rose-600", bg: "bg-rose-50", href: "/sar-reviews" },
+    { label: "Avg Case Age", value: `${kpis.avgCaseAgeDays}d`, icon: Timer, color: "text-teal-600", bg: "bg-teal-50", href: "/kpi-reports" },
+    { label: "False Positive Rate", value: `${kpis.fpRate}%`, icon: TrendingUp, color: "text-slate-600", bg: "bg-slate-100", href: "/kpi-reports" },
+  ];
+
+  const recentAlerts = state.alerts
+    .filter(a => a.status === "Open" || a.status === "In Review")
+    .sort((a, b) => new Date(b.createdDate).getTime() - new Date(a.createdDate).getTime())
+    .slice(0, 5);
+
+  const criticalCases = state.cases
+    .filter(c => c.priority === "Critical" && c.status !== "Closed")
+    .slice(0, 5);
+
+  // Live charts — rebuild from state
+  const alertsBySource = [
+    "Transaction Monitoring", "KYC", "Sanctions Screening", "PEP Screening",
+    "Adverse Media", "Fraud", "Chargeback", "Manual Review",
+  ].map(src => ({
+    name: src.replace(" Screening", "").replace(" Monitoring", " Mon."),
+    value: state.alerts.filter(a => a.source === src && (a.status === "Open" || a.status === "In Review")).length,
+  })).filter(d => d.value > 0);
+
+  const casesByStatus = ["Open", "In Review", "Pending EDD", "Escalated", "SAR Review", "Closed"].map(s => ({
+    name: s,
+    value: state.cases.filter(c => c.status === s).length,
+  }));
+
   return (
     <div className="space-y-6">
       <div>
@@ -62,13 +83,11 @@ export default function DashboardPage() {
       {/* Charts Row */}
       <div className="grid grid-cols-2 gap-6">
         <Card>
-          <CardHeader>
-            <CardTitle>Alerts by Source</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Open Alerts by Source</CardTitle></CardHeader>
           <CardContent className="pt-2">
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={KPI_DATA.alertsBySource} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={50} />
+              <BarChart data={alertsBySource} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-25} textAnchor="end" height={50} />
                 <YAxis tick={{ fontSize: 10 }} />
                 <Tooltip />
                 <Bar dataKey="value" fill="#3b82f6" radius={[3, 3, 0, 0]} />
@@ -78,20 +97,15 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Alerts by Priority</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Alerts by Priority</CardTitle></CardHeader>
           <CardContent className="flex items-center justify-center pt-2">
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
                 <Pie
                   data={KPI_DATA.alertsByPriority}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={80}
-                  dataKey="value"
-                  nameKey="name"
+                  cx="50%" cy="50%"
+                  innerRadius={50} outerRadius={80}
+                  dataKey="value" nameKey="name"
                 >
                   {KPI_DATA.alertsByPriority.map((entry, index) => (
                     <Cell key={index} fill={entry.color} />
@@ -116,6 +130,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-slate-100">
+              {recentAlerts.length === 0 && (
+                <p className="px-6 py-4 text-sm text-slate-400">No open alerts.</p>
+              )}
               {recentAlerts.map(alert => (
                 <Link key={alert.id} href={`/alerts/${alert.id}`} className="flex items-start gap-3 px-6 py-3 hover:bg-slate-50">
                   <div className="flex-1 min-w-0">
@@ -150,6 +167,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-slate-100">
+              {criticalCases.length === 0 && (
+                <p className="px-6 py-4 text-sm text-slate-400">No critical active cases.</p>
+              )}
               {criticalCases.map(c => (
                 <Link key={c.id} href={`/cases/${c.id}`} className="flex items-start gap-3 px-6 py-3 hover:bg-slate-50">
                   <div className="flex-1 min-w-0">
@@ -173,17 +193,15 @@ export default function DashboardPage() {
 
       {/* Cases by Status */}
       <Card>
-        <CardHeader>
-          <CardTitle>Cases by Status</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Cases by Status (Live)</CardTitle></CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={KPI_DATA.casesByStatus} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+            <BarChart data={casesByStatus} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip />
               <Bar dataKey="value" radius={[3, 3, 0, 0]}>
-                {KPI_DATA.casesByStatus.map((entry, index) => (
+                {casesByStatus.map((_, index) => (
                   <Cell key={index} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Bar>

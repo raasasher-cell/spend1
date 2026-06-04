@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { CASES } from "@/lib/mock-data";
+import { useStore } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -10,23 +10,26 @@ import { Search, Eye } from "lucide-react";
 import Link from "next/link";
 
 export default function CasesPage() {
+  const { state } = useStore();
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
 
-  const filtered = useMemo(() => CASES.filter(c => {
+  const filtered = useMemo(() => state.cases.filter(c => {
     const q = search.toLowerCase();
     const matchSearch = !q || c.id.toLowerCase().includes(q) || c.customerName.toLowerCase().includes(q);
     const matchStatus = !filterStatus || c.status === filterStatus;
     const matchPriority = !filterPriority || c.priority === filterPriority;
     return matchSearch && matchStatus && matchPriority;
-  }), [search, filterStatus, filterPriority]);
+  }), [state.cases, search, filterStatus, filterPriority]);
+
+  const activeCount = state.cases.filter(c => c.status !== "Closed").length;
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-slate-900">Cases</h1>
-        <p className="text-sm text-slate-500 mt-0.5">{filtered.length} cases · {CASES.filter(c => c.status !== "Closed").length} active</p>
+        <p className="text-sm text-slate-500 mt-0.5">{filtered.length} cases · {activeCount} active</p>
       </div>
       <Card>
         <div className="px-4 py-3 flex flex-wrap gap-3">
