@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String @id
+  name         String
+  email        String @unique
+  role         String
+  passwordHash String?
+}
+
+model Customer {
+  id              String        @id
+  name            String
+  type            String
+  status          String
+  riskRating      String
+  kycStatus       String
+  screeningStatus String
+  totalVolume     Float
+  lastTransaction String
+  email           String
+  phone           String
+  address         String
+  dateOnboarded   String
+  country         String
+  ssn             String?
+  ein             String?
+  dob             String?
+
+  alerts       Alert[]
+  cases        Case[]
+  transactions Transaction[]
+  sarReviews   SARReview[]
+}
+
+model Alert {
+  id           String  @id
+  customerId   String
+  customerName String
+  type         String
+  source       String
+  riskScore    Int
+  status       String
+  priority     String?
+  assignedTo   String?
+  createdDate  String
+  slaDue       String
+  description  String
+  caseId       String?
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  case     Case?    @relation(fields: [caseId], references: [id])
+}
+
+model Case {
+  id           String  @id
+  customerId   String
+  customerName String
+  status       String
+  priority     String
+  assignedTo   String
+  createdDate  String
+  updatedDate  String
+  description  String
+  sarStatus    String?
+  closedDate   String?
+
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  alerts     Alert[]
+  notes      CaseNote[]
+  sarReviews SARReview[]
+}
+
+model CaseNote {
+  id         String @id
+  caseId     String
+  author     String
+  authorRole String @default("")
+  content    String
+  timestamp  String
+  type       String
+
+  case Case @relation(fields: [caseId], references: [id])
+}
+
+model SARReview {
+  id                 String  @id
+  caseId             String
+  customerId         String
+  customerName       String
+  detectionDate      String
+  sarDeadline        String
+  status             String
+  recommendedBy      String
+  finalDecisionMaker String?
+  filingStatus       String?
+  continuingSarDue   String?
+  amount             Float
+  narrative          String?
+
+  case     Case     @relation(fields: [caseId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+}
+
+model Transaction {
+  id           String  @id
+  customerId   String
+  customerName String
+  type         String
+  amount       Float
+  currency     String
+  status       String
+  counterparty String
+  date         String
+  channel      String
+  flagged      Boolean
+
+  customer Customer @relation(fields: [customerId], references: [id])
+}
+
+model AuditLogEntry {
+  id             String  @id
+  timestamp      String
+  actor          String
+  actorRole      String
+  action         String
+  entityType     String
+  entityId       String
+  details        String
+  ipAddress      String
+  previousStatus String?
+  newStatus      String?
+  reason         String?
+}

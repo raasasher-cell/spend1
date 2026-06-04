@@ -1,6 +1,6 @@
 "use client";
-import { use } from "react";
-import { CUSTOMERS, ALERTS, CASES, TRANSACTIONS, AUDIT_LOG } from "@/lib/mock-data";
+import { use, useState, useEffect } from "react";
+import { useStore } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -9,15 +9,46 @@ import { formatDate, formatCurrency } from "@/lib/utils";
 import { ArrowLeft, Phone, Mail, MapPin, Calendar, ExternalLink, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 
+type AlertRow = { id: string; type: string; source: string; riskScore: number; status: string; priority: string | null; createdDate: string; customerId: string };
+type NoteRow = { id: string; content: string; author: string; authorRole: string; timestamp: string };
+type CaseRow = { id: string; status: string; priority: string; assignedTo: string; createdDate: string; updatedDate: string; customerName: string; alerts: { id: string }[]; notes: NoteRow[] };
+type TxRow = { id: string; type: string; amount: number; counterparty: string; date: string; channel: string; status: string; flagged: boolean };
+type CustomerDetail = {
+  id: string; name: string; type: string; status: string; riskRating: string; kycStatus: string; screeningStatus: string;
+  totalVolume: number; lastTransaction: string; email: string; phone: string; address: string;
+  dateOnboarded: string; country: string; dob: string | null; ein: string | null;
+  alerts: AlertRow[];
+  cases: CaseRow[];
+  transactions: TxRow[];
+};
+
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const customer = CUSTOMERS.find(c => c.id === id);
-  if (!customer) return <div className="p-8 text-slate-500">Customer not found.</div>;
+  const [customer, setCustomer] = useState<CustomerDetail | null | "not_found">(null);
+  const { state } = useStore();
 
-  const alerts = ALERTS.filter(a => a.customerId === id);
-  const cases = CASES.filter(c => c.customerId === id);
-  const transactions = TRANSACTIONS.filter(t => t.customerId === id);
-  const auditEntries = AUDIT_LOG.filter(e => e.entityId === id || alerts.some(a => a.id === e.entityId) || cases.some(c => c.id === e.entityId)).slice(0, 10);
+  useEffect(() => {
+    fetch(`/api/customers/${id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setCustomer(data ?? "not_found"))
+      .catch(() => setCustomer("not_found"));
+  }, [id]);
+
+  if (customer === null) return <div className="p-8 text-slate-500">Loading...</div>;
+  if (customer === "not_found") return <div className="p-8 text-slate-500">Customer not found.</div>;
+
+  const alerts = customer.alerts ?? [];
+  const cases = customer.cases ?? [];
+  const transactions = customer.transactions ?? [];
+
+  const openAlerts = alerts.filter(a => ["Open", "In Review", "Escalated"].includes(a.status)).length;
+  const openCases = cases.filter(c => c.status !== "Closed").length;
+
+  const alertIds = new Set(alerts.map(a => a.id));
+  const caseIds = new Set(cases.map(c => c.id));
+  const auditEntries = state.auditLog
+    .filter(e => e.entityId === id || alertIds.has(e.entityId) || caseIds.has(e.entityId))
+    .slice(0, 10);
 
   const initials = customer.name.split(" ").map(n => n[0]).join("").slice(0, 2);
 
@@ -27,7 +58,6 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         <Link href="/customers"><Button variant="ghost" size="sm"><ArrowLeft className="w-4 h-4" /> Back</Button></Link>
       </div>
 
-      {/* Customer Overview Card */}
       <Card>
         <CardContent className="py-5">
           <div className="flex items-start gap-5">
@@ -54,11 +84,11 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               <div className="grid grid-cols-4 gap-6 mt-4 pt-4 border-t border-slate-100">
                 <div>
                   <p className="text-xs text-slate-400">Open Alerts</p>
-                  <p className={`text-2xl font-bold mt-0.5 ${customer.openAlerts > 0 ? "text-red-600" : "text-slate-400"}`}>{customer.openAlerts}</p>
+                  <p className={`text-2xl font-bold mt-0.5 ${openAlerts > 0 ? "text-red-600" : "text-slate-400"}`}>{openAlerts}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-400">Open Cases</p>
-                  <p className={`text-2xl font-bold mt-0.5 ${customer.openCases > 0 ? "text-orange-600" : "text-slate-400"}`}>{customer.openCases}</p>
+                  <p className={`text-2xl font-bold mt-0.5 ${openCases > 0 ? "text-orange-600" : "text-slate-400"}`}>{openCases}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-400">Total Volume</p>
@@ -181,7 +211,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                       <p className="text-sm font-medium text-slate-700">{list}</p>
                       {confidence !== "N/A" && <p className="text-xs text-slate-400">Confidence: {confidence}</p>}
                     </div>
-                    <StatusBadge status={result === "Clear" ? "Clear" : result.includes("Hit") || result.includes("Match") ? "Hit" : "Hit"} />
+                    <StatusBadge status={result === "Clear" ? "Clear" : "Hit"} />
                     <span className="ml-3 text-sm text-slate-600">{result}</span>
                   </div>
                 ))}
@@ -272,7 +302,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                       <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
                       <td className="px-4 py-3"><PriorityBadge priority={c.priority} /></td>
                       <td className="px-4 py-3 text-xs text-slate-600">{c.assignedTo}</td>
-                      <td className="px-4 py-3 text-sm font-semibold text-slate-700">{c.alertIds.length}</td>
+                      <td className="px-4 py-3 text-sm font-semibold text-slate-700">{c.alerts?.length ?? 0}</td>
                       <td className="px-4 py-3 text-xs text-slate-500">{formatDate(c.createdDate)}</td>
                       <td className="px-4 py-3 text-xs text-slate-500">{formatDate(c.updatedDate)}</td>
                       <td className="px-4 py-3">

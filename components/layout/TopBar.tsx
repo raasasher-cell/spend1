@@ -1,23 +1,53 @@
 "use client";
-import { useState } from "react";
-import { Search, Bell, HelpCircle, X } from "lucide-react";
-import { ALERTS, CUSTOMERS, CASES } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { Search, Bell, HelpCircle, X, LogOut } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import Link from "next/link";
 
-export function TopBar() {
-  const [query, setQuery] = useState("");
-  const [showResults, setShowResults] = useState(false);
+type AlertResult = { id: string; type: string; customerName: string };
+type CustomerResult = { id: string; name: string; type: string; riskRating: string };
+type CaseResult = { id: string; status: string; customerName: string };
 
-  const q = query.toLowerCase();
-  const alertResults = q.length > 1 ? ALERTS.filter(a =>
-    a.id.toLowerCase().includes(q) || a.customerName.toLowerCase().includes(q) || a.type.toLowerCase().includes(q)
-  ).slice(0, 3) : [];
-  const customerResults = q.length > 1 ? CUSTOMERS.filter(c =>
-    c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
-  ).slice(0, 3) : [];
-  const caseResults = q.length > 1 ? CASES.filter(c =>
-    c.id.toLowerCase().includes(q) || c.customerName.toLowerCase().includes(q)
-  ).slice(0, 3) : [];
+export function TopBar() {
+  const { user } = useCurrentUser();
+  const router = useRouter();
+  const [query, setQuery] = useState("");
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
+  const [showResults, setShowResults] = useState(false);
+  const [fetched, setFetched] = useState<{ alerts: AlertResult[]; customers: CustomerResult[]; cases: CaseResult[] }>({ alerts: [], customers: [], cases: [] });
+
+  const shouldSearch = query.length >= 2;
+  const alertResults = shouldSearch ? fetched.alerts : [];
+  const customerResults = shouldSearch ? fetched.customers : [];
+  const caseResults = shouldSearch ? fetched.cases : [];
+
+  useEffect(() => {
+    if (!shouldSearch) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const q = encodeURIComponent(query);
+        const [alertsRes, customersRes, casesRes] = await Promise.all([
+          fetch(`/api/alerts?q=${q}&pageSize=3`).then(r => r.json()),
+          fetch(`/api/customers?q=${q}&pageSize=3`).then(r => r.json()),
+          fetch(`/api/cases?q=${q}&pageSize=3`).then(r => r.json()),
+        ]);
+        if (!cancelled) {
+          setFetched({ alerts: alertsRes.alerts ?? [], customers: customersRes.customers ?? [], cases: casesRes.cases ?? [] });
+        }
+      } catch {
+        // silently ignore
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [query, shouldSearch]);
 
   const hasResults = alertResults.length + customerResults.length + caseResults.length > 0;
 
@@ -94,7 +124,34 @@ export function TopBar() {
         <button className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md">
           <HelpCircle className="w-4 h-4" />
         </button>
-        <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold ml-1">SC</div>
+        {user && (
+          <div className="relative ml-1">
+            <button onClick={() => setShowUserMenu(v => !v)}
+              className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors">
+              <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
+                {user.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+              </div>
+              <div className="text-left hidden sm:block">
+                <p className="text-xs font-semibold text-slate-800 leading-none">{user.name}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{user.role}</p>
+              </div>
+            </button>
+            {showUserMenu && (
+              <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg z-50 overflow-hidden"
+                onBlur={() => setShowUserMenu(false)}>
+                <div className="px-3 py-2.5 border-b border-slate-100">
+                  <p className="text-xs font-semibold text-slate-800">{user.name}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">{user.email}</p>
+                  <span className="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">{user.role}</span>
+                </div>
+                <button onClick={handleLogout}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                  <LogOut className="w-3.5 h-3.5" /> Sign out
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </header>
   );
