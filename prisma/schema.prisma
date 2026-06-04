@@ -30,9 +30,16 @@ model Customer {
   address         String
   dateOnboarded   String
   country         String
-  ssn             String?
-  ein             String?
-  dob             String?
+  ssn                String?
+  ein                String?
+  dob                String?
+  kycVerifiedAt      String?
+  kycExpiresAt       String?
+  kycRejectionReason String?
+  kycVendorRef       String?
+  kycDocScore        Float?
+  kycFaceScore       Float?
+  kycDecision        String?
 
   alerts       Alert[]
   cases        Case[]

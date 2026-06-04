@@ -6,17 +6,29 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { StatusBadge, PriorityBadge, RiskBadge } from "@/components/ui/badge";
 import { formatDate, formatCurrency } from "@/lib/utils";
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, ExternalLink, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, ExternalLink, AlertTriangle, RefreshCw, UserCheck, CheckCircle } from "lucide-react";
 import Link from "next/link";
 
 type AlertRow = { id: string; type: string; source: string; riskScore: number; status: string; priority: string | null; createdDate: string; customerId: string };
 type NoteRow = { id: string; content: string; author: string; authorRole: string; timestamp: string };
 type CaseRow = { id: string; status: string; priority: string; assignedTo: string; createdDate: string; updatedDate: string; customerName: string; alerts: { id: string }[]; notes: NoteRow[] };
 type TxRow = { id: string; type: string; amount: number; counterparty: string; date: string; channel: string; status: string; flagged: boolean };
+type VerifyResult = {
+  requestId: string; overallDecision: string;
+  checks: {
+    documentVerification: { result: string; confidence: number; documentType: string };
+    faceMatch: { result: string; confidence: number; livenessDetected: boolean };
+    addressVerification: { result: string; confidence: string };
+    watchlistCheck: { result: string; listsChecked: string[] };
+  };
+};
+
 type CustomerDetail = {
   id: string; name: string; type: string; status: string; riskRating: string; kycStatus: string; screeningStatus: string;
   totalVolume: number; lastTransaction: string; email: string; phone: string; address: string;
   dateOnboarded: string; country: string; dob: string | null; ein: string | null;
+  kycVerifiedAt: string | null; kycExpiresAt: string | null;
+  kycVendorRef: string | null; kycDocScore: number | null; kycFaceScore: number | null; kycDecision: string | null;
   alerts: AlertRow[];
   cases: CaseRow[];
   transactions: TxRow[];
@@ -25,6 +37,8 @@ type CustomerDetail = {
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [customer, setCustomer] = useState<CustomerDetail | null | "not_found">(null);
+  const [kycRunning, setKycRunning] = useState(false);
+  const [kycResult, setKycResult] = useState<VerifyResult | null>(null);
   const { state } = useStore();
 
   useEffect(() => {
@@ -49,6 +63,26 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const auditEntries = state.auditLog
     .filter(e => e.entityId === id || alertIds.has(e.entityId) || caseIds.has(e.entityId))
     .slice(0, 10);
+
+  async function runKyc() {
+    if (!customer || customer === "not_found") return;
+    setKycRunning(true);
+    try {
+      const res = await fetch("/api/vendor/kyc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: customer.name, entityId: customer.id, kycStatus: customer.kycStatus }),
+      });
+      if (res.ok) {
+        const data: VerifyResult = await res.json();
+        setKycResult(data);
+        // Refresh customer data
+        fetch(`/api/customers/${id}`).then(r => r.ok ? r.json() : null).then(d => { if (d) setCustomer(d); });
+      }
+    } finally {
+      setKycRunning(false);
+    }
+  }
 
   const initials = customer.name.split(" ").map(n => n[0]).join("").slice(0, 2);
 
@@ -168,29 +202,129 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </TabsContent>
 
         <TabsContent value="kyc">
-          <Card>
-            <CardHeader><CardTitle>KYC Verification Results</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { check: "Identity Verification", status: customer.kycStatus === "Rejected" ? "Failed" : customer.kycStatus === "Pending" ? "Pending" : "Passed", detail: "Government ID, Selfie match" },
-                  { check: "Address Verification", status: customer.kycStatus === "Rejected" ? "Failed" : "Passed", detail: "Utility bill, Bank statement" },
-                  { check: "Document Authenticity", status: customer.kycStatus === "Rejected" ? "Failed" : customer.kycStatus === "Manual Review" ? "Review Required" : "Passed", detail: "AI-assisted document review" },
-                  { check: "Database Check", status: customer.kycStatus === "Approved" ? "Passed" : "Review Required", detail: "DMV, USPS, Credit Bureau" },
-                  { check: "Watchlist Screening", status: customer.screeningStatus === "Clear" ? "Clear" : "Hit", detail: "OFAC, EU, UN Lists" },
-                  { check: "Beneficial Ownership", status: customer.type === "Individual" ? "N/A" : customer.kycStatus === "Manual Review" ? "Incomplete" : "Verified", detail: "25%+ threshold" },
-                ].map(({ check, status, detail }) => (
-                  <div key={check} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 bg-slate-50">
+          <div className="space-y-4">
+            {/* Status + Action Header */}
+            <Card>
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
                     <div>
-                      <p className="text-sm font-medium text-slate-700">{check}</p>
-                      <p className="text-xs text-slate-400">{detail}</p>
+                      <p className="text-xs text-slate-400">KYC Status</p>
+                      <div className="mt-1"><StatusBadge status={customer.kycStatus} /></div>
                     </div>
-                    <StatusBadge status={status} />
+                    {customer.kycVerifiedAt && (
+                      <div>
+                        <p className="text-xs text-slate-400">Last Verified</p>
+                        <p className="text-sm font-medium text-slate-700 mt-0.5">{formatDate(customer.kycVerifiedAt)}</p>
+                      </div>
+                    )}
+                    {customer.kycExpiresAt && (
+                      <div>
+                        <p className="text-xs text-slate-400">Expires</p>
+                        <p className="text-sm font-medium text-slate-700 mt-0.5">{formatDate(customer.kycExpiresAt)}</p>
+                      </div>
+                    )}
+                    {customer.kycVendorRef && (
+                      <div>
+                        <p className="text-xs text-slate-400">Vendor Ref</p>
+                        <p className="text-xs font-mono text-slate-600 mt-0.5">{customer.kycVendorRef}</p>
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <Button variant="outline" size="sm" onClick={runKyc} disabled={kycRunning}>
+                    {kycRunning
+                      ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Running...</>
+                      : customer.kycVerifiedAt
+                        ? <><RefreshCw className="w-3.5 h-3.5" /> Re-verify</>
+                        : <><UserCheck className="w-3.5 h-3.5" /> Run Verification</>
+                    }
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Live verification result */}
+            {kycResult && (
+              <Card className="border-blue-200">
+                <CardHeader className="py-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-blue-800">Verification Result — {kycResult.requestId}</CardTitle>
+                    <span className={`text-sm font-bold px-3 py-1 rounded-full ${kycResult.overallDecision === "ACCEPT" ? "bg-green-100 text-green-700" : kycResult.overallDecision === "REJECT" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                      {kycResult.overallDecision}
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-4 gap-3">
+                    {[
+                      { label: "Document", result: kycResult.checks.documentVerification.result, detail: `${kycResult.checks.documentVerification.documentType} · Score ${kycResult.checks.documentVerification.confidence}` },
+                      { label: "Face Match", result: kycResult.checks.faceMatch.result, detail: `Score ${kycResult.checks.faceMatch.confidence} · Liveness ${kycResult.checks.faceMatch.livenessDetected ? "✓" : "✗"}` },
+                      { label: "Address", result: kycResult.checks.addressVerification.result, detail: `Confidence: ${kycResult.checks.addressVerification.confidence}` },
+                      { label: "Watchlist", result: kycResult.checks.watchlistCheck.result, detail: kycResult.checks.watchlistCheck.listsChecked.join(", ") },
+                    ].map(({ label, result, detail }) => (
+                      <div key={label} className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                        <p className="text-xs text-slate-400 mb-1">{label}</p>
+                        <p className={`text-sm font-bold ${result === "PASSED" || result === "CLEAR" ? "text-green-600" : result === "FAILED" ? "text-red-600" : "text-amber-600"}`}>{result}</p>
+                        <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Stored scores (if previously verified) */}
+            {!kycResult && (customer.kycDocScore || customer.kycFaceScore) && (
+              <Card>
+                <CardHeader><CardTitle>Last Verification Scores</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="p-3 rounded-lg bg-slate-50">
+                      <p className="text-xs text-slate-400">Document Score</p>
+                      <p className="text-xl font-bold text-slate-900 mt-0.5">{customer.kycDocScore}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-slate-50">
+                      <p className="text-xs text-slate-400">Face Match Score</p>
+                      <p className="text-xl font-bold text-slate-900 mt-0.5">{customer.kycFaceScore}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-slate-50">
+                      <p className="text-xs text-slate-400">Decision</p>
+                      <p className={`text-sm font-bold mt-0.5 ${customer.kycDecision === "ACCEPT" ? "text-green-600" : customer.kycDecision === "REJECT" ? "text-red-600" : "text-amber-600"}`}>{customer.kycDecision}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-slate-50">
+                      <p className="text-xs text-slate-400">Watchlist</p>
+                      <p className="text-sm font-bold mt-0.5 text-green-600 flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5" /> Clear</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Checklist */}
+            <Card>
+              <CardHeader><CardTitle>Verification Checklist</CardTitle></CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { check: "Identity Verification", status: customer.kycStatus === "Rejected" ? "Failed" : customer.kycStatus === "Pending" ? "Pending" : "Passed", detail: "Government ID, Selfie match" },
+                    { check: "Address Verification", status: customer.kycStatus === "Rejected" ? "Failed" : "Passed", detail: "Utility bill, Bank statement" },
+                    { check: "Document Authenticity", status: customer.kycStatus === "Rejected" ? "Failed" : customer.kycStatus === "Manual Review" ? "Review Required" : "Passed", detail: "AI-assisted document review" },
+                    { check: "Database Check", status: customer.kycStatus === "Approved" ? "Passed" : "Review Required", detail: "DMV, USPS, Credit Bureau" },
+                    { check: "Watchlist Screening", status: customer.screeningStatus === "Clear" ? "Clear" : "Hit", detail: "OFAC, EU, UN Lists" },
+                    { check: "Beneficial Ownership", status: customer.type === "Individual" ? "N/A" : customer.kycStatus === "Manual Review" ? "Incomplete" : "Verified", detail: "25%+ threshold" },
+                  ].map(({ check, status, detail }) => (
+                    <div key={check} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 bg-slate-50">
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">{check}</p>
+                        <p className="text-xs text-slate-400">{detail}</p>
+                      </div>
+                      <StatusBadge status={status} />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="screening">

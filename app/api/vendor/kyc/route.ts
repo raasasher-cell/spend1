@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/auth-guard";
 
 export async function POST(req: NextRequest) {
+  const { forbidden } = await requireSession(req);
+  if (forbidden) return forbidden;
+
   const { name, entityId, kycStatus } = await req.json();
   if (!name || !entityId) return NextResponse.json({ error: "name and entityId required" }, { status: 400 });
 
@@ -10,8 +15,9 @@ export async function POST(req: NextRequest) {
   const docScore = 85 + (seed % 15);
   const faceScore = 88 + (seed % 10);
   const addressConfidence = seed % 3 === 0 ? "Medium" : "High";
+  const overallDecision = kycStatus === "Rejected" ? "REJECT" : kycStatus === "Manual Review" ? "REFER" : "ACCEPT";
 
-  return NextResponse.json({
+  const result = {
     requestId: `KYC-${Date.now()}`,
     entityName: name,
     entityId,
@@ -39,7 +45,25 @@ export async function POST(req: NextRequest) {
         listsChecked: ["OFAC", "EU Sanctions", "FBI Most Wanted"],
       },
     },
-    overallDecision: kycStatus === "Rejected" ? "REJECT" : kycStatus === "Manual Review" ? "REFER" : "ACCEPT",
+    overallDecision,
     processingTimeMs: 820,
+  };
+
+  // Persist results to customer record
+  const verifiedAt = new Date().toISOString().split("T")[0];
+  const expiresAt = new Date(Date.now() + 365 * 86400000).toISOString().split("T")[0];
+  await prisma.customer.update({
+    where: { id: entityId },
+    data: {
+      kycVerifiedAt: verifiedAt,
+      kycExpiresAt: expiresAt,
+      kycVendorRef: result.requestId,
+      kycDocScore: docScore,
+      kycFaceScore: faceScore,
+      kycDecision: overallDecision,
+      kycStatus: overallDecision === "ACCEPT" ? "Approved" : overallDecision === "REJECT" ? "Rejected" : "Manual Review",
+    },
   });
+
+  return NextResponse.json(result);
 }

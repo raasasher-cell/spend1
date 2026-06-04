@@ -6,13 +6,16 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
   LayoutDashboard, Bell, Users, Briefcase, FileText,
   BarChart3, Settings, ShieldCheck, Upload, Download, LogOut,
+  UserCheck, ShieldAlert,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/alerts", icon: Bell, label: "Alerts" },
   { href: "/customers", icon: Users, label: "Customers" },
+  { href: "/kyc-queue", icon: UserCheck, label: "KYC Queue" },
   { href: "/cases", icon: Briefcase, label: "Cases" },
+  { href: "/fraud", icon: ShieldAlert, label: "Fraud" },
   { href: "/sar-reviews", icon: FileText, label: "SAR Reviews" },
   { href: "/kpi-reports", icon: BarChart3, label: "KPI Reports" },
 ];
