@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guard";
+import { createAuditLog } from "@/lib/audit";
 
 const REQUIRED = ["customerId", "type", "source", "riskScore", "priority", "description"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -74,19 +75,9 @@ export async function POST(req: NextRequest) {
     await prisma.alert.createMany({ data: valid });
   }
 
-  await prisma.auditLogEntry.create({
-    data: {
-      id: `AUD-IMP-ALT-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actor: session!.name,
-      actorRole: session!.role,
-      action: "CSV Import: Alerts",
-      entityType: "Import",
-      entityId: "bulk",
-      details: `Imported ${valid.length} alerts from ${file.name} (${rows.length} rows, ${errors.length} errors)`,
-      ipAddress: req.headers.get("x-forwarded-for") ?? "unknown",
-    },
-  });
+  await createAuditLog(session!, req, "CSV Import Completed", "Import", "bulk",
+    `Imported ${valid.length} alerts from ${file.name} (${rows.length} rows, ${errors.length} errors)`,
+  );
 
   return NextResponse.json({ imported: valid.length, errors, total: rows.length });
 }

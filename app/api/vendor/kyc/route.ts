@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth-guard";
+import { createAuditLog } from "@/lib/audit";
 
 export async function POST(req: NextRequest) {
-  const { forbidden } = await requireSession(req);
+  const { session, forbidden } = await requireSession(req);
   if (forbidden) return forbidden;
 
   const { name, entityId, kycStatus } = await req.json();
@@ -49,9 +50,11 @@ export async function POST(req: NextRequest) {
     processingTimeMs: 820,
   };
 
-  // Persist results to customer record
   const verifiedAt = new Date().toISOString().split("T")[0];
   const expiresAt = new Date(Date.now() + 365 * 86400000).toISOString().split("T")[0];
+  const newKycStatus =
+    overallDecision === "ACCEPT" ? "Approved" : overallDecision === "REJECT" ? "Rejected" : "Manual Review";
+
   await prisma.customer.update({
     where: { id: entityId },
     data: {
@@ -61,9 +64,19 @@ export async function POST(req: NextRequest) {
       kycDocScore: docScore,
       kycFaceScore: faceScore,
       kycDecision: overallDecision,
-      kycStatus: overallDecision === "ACCEPT" ? "Approved" : overallDecision === "REJECT" ? "Rejected" : "Manual Review",
+      kycStatus: newKycStatus,
     },
   });
+
+  await createAuditLog(
+    session!,
+    req,
+    "KYC Verification Run",
+    "Customer",
+    entityId,
+    `KYC verification run for ${name}. Decision: ${overallDecision}. Ref: ${result.requestId}. Doc score: ${docScore}, Face score: ${faceScore}.`,
+    { previousStatus: kycStatus, newStatus: newKycStatus },
+  );
 
   return NextResponse.json(result);
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guard";
+import { createAuditLog } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
   const { session, forbidden } = await requirePermission(req, "export_data");
@@ -29,19 +30,9 @@ export async function GET(req: NextRequest) {
   const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
   const date = new Date().toISOString().split("T")[0];
 
-  await prisma.auditLogEntry.create({
-    data: {
-      id: `AUD-EXP-ALT-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actor: session!.name,
-      actorRole: session!.role,
-      action: "CSV Export: Alerts",
-      entityType: "Export",
-      entityId: "bulk",
-      details: `Exported ${alerts.length} alerts (filters: status=${status ?? "all"}, priority=${priority ?? "all"})`,
-      ipAddress: req.headers.get("x-forwarded-for") ?? "unknown",
-    },
-  });
+  await createAuditLog(session!, req, "Export Generated", "Export", "bulk",
+    `Exported ${alerts.length} alerts (filters: status=${status ?? "all"}, priority=${priority ?? "all"})`,
+  );
 
   return new NextResponse(csv, {
     headers: {

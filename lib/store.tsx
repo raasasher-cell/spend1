@@ -341,10 +341,10 @@ async function syncActionToApi(action: AppAction, state: AppState): Promise<void
       await patch(`/api/alerts/${action.alertId}`, { status: action.status });
       break;
     case "CLOSE_ALERT":
-      await patch(`/api/alerts/${action.alertId}`, { status: "Closed" });
+      await patch(`/api/alerts/${action.alertId}`, { status: "Closed", _reason: action.reason });
       break;
     case "FALSE_POSITIVE_ALERT":
-      await patch(`/api/alerts/${action.alertId}`, { status: "False Positive" });
+      await patch(`/api/alerts/${action.alertId}`, { status: "False Positive", _reason: action.reason });
       break;
     case "ESCALATE_ALERT_TO_CASE": {
       const alert = state.alerts.find(a => a.id === action.alertId);
@@ -365,10 +365,10 @@ async function syncActionToApi(action: AppAction, state: AppState): Promise<void
       });
       break;
     case "REQUEST_EDD":
-      await patch(`/api/cases/${action.caseId}`, { status: "Pending EDD" });
+      await patch(`/api/cases/${action.caseId}`, { status: "Pending EDD", _reason: action.note });
       break;
     case "ESCALATE_CASE":
-      await patch(`/api/cases/${action.caseId}`, { status: "Escalated", assignedTo: action.escalateTo });
+      await patch(`/api/cases/${action.caseId}`, { status: "Escalated", assignedTo: action.escalateTo, _reason: action.note });
       break;
     case "RECOMMEND_SAR": {
       const c = state.cases.find(c => c.id === action.caseId);
@@ -386,10 +386,10 @@ async function syncActionToApi(action: AppAction, state: AppState): Promise<void
       break;
     }
     case "CLOSE_CASE":
-      await patch(`/api/cases/${action.caseId}`, { status: "Closed", closedDate: today() });
+      await patch(`/api/cases/${action.caseId}`, { status: "Closed", closedDate: today(), _reason: action.reason });
       break;
     case "FALSE_POSITIVE_CASE":
-      await patch(`/api/cases/${action.caseId}`, { status: "Closed", closedDate: today() });
+      await patch(`/api/cases/${action.caseId}`, { status: "Closed", closedDate: today(), _reason: action.reason, _closeType: "false_positive" });
       break;
     case "LINK_ALERT_TO_CASE":
       await patch(`/api/alerts/${action.alertId}`, { caseId: action.caseId, status: "Escalated" });
@@ -398,15 +398,16 @@ async function syncActionToApi(action: AppAction, state: AppState): Promise<void
       await patch(`/api/sar-reviews/${action.sarId}`, { status: "SAR Recommended" });
       break;
     case "APPROVE_SAR":
-      await patch(`/api/sar-reviews/${action.sarId}`, { status: "SAR Approved", finalDecisionMaker: state.currentUser.name, filingStatus: "Pending Filing" });
+      await patch(`/api/sar-reviews/${action.sarId}`, { status: "SAR Approved", finalDecisionMaker: state.currentUser.name, filingStatus: "Pending Filing", _reason: action.rationale });
       break;
     case "DECLINE_SAR":
-      await patch(`/api/sar-reviews/${action.sarId}`, { status: "SAR Declined", finalDecisionMaker: state.currentUser.name });
+      await patch(`/api/sar-reviews/${action.sarId}`, { status: "SAR Declined", finalDecisionMaker: state.currentUser.name, _reason: action.rationale });
       break;
     case "FILE_SAR":
       await patch(`/api/sar-reviews/${action.sarId}`, {
         status: "Filed",
         filingStatus: `Filed with FinCEN — Ref: ${action.filingRef}`,
+        _reason: action.filingRef,
         ...(action.continuingSarDate && { continuingSarDue: action.continuingSarDate }),
       });
       break;

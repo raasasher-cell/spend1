@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/auth-guard";
+import { createAuditLog } from "@/lib/audit";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -11,6 +13,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { session, forbidden } = await requireSession(req);
+  if (forbidden) return forbidden;
+
   const { id } = await params;
   const body = await req.json();
 
@@ -25,6 +30,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     data: { updatedDate: new Date().toISOString().split("T")[0] },
   });
+
+  await createAuditLog(
+    session!,
+    req,
+    "Case Note Added",
+    "Case",
+    id,
+    `${body.type ?? "Note"} added to case by ${session!.name}.`,
+  );
 
   return NextResponse.json(note, { status: 201 });
 }
