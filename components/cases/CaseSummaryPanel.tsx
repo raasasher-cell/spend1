@@ -8,11 +8,13 @@ export function CaseSummaryPanel({ caseId }: { caseId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [demoWarning, setDemoWarning] = useState(false);
 
   async function generate() {
     setLoading(true);
     setError("");
     setSummary("");
+    setDemoWarning(false);
     try {
       const res = await fetch("/api/ai/case-summary", {
         method: "POST",
@@ -20,6 +22,7 @@ export function CaseSummaryPanel({ caseId }: { caseId: string }) {
         body: JSON.stringify({ caseId }),
       });
       if (!res.ok) { setError("Failed to generate summary"); setLoading(false); return; }
+      if (res.headers.get("x-demo-mode") === "true") setDemoWarning(true);
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -88,6 +91,13 @@ export function CaseSummaryPanel({ caseId }: { caseId: string }) {
 
         {error && (
           <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-md">{error}</div>
+        )}
+
+        {demoWarning && (
+          <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-md mb-3">
+            <span className="mt-px shrink-0">⚠</span>
+            <span>Demo mode — this summary is based on mock data only and must not be used for production compliance decisions.</span>
+          </div>
         )}
 
         {summary && (

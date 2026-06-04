@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth-guard";
+import { isDemoMode } from "@/lib/demo-mode";
 
 export async function POST(req: NextRequest) {
   const { forbidden } = await requireSession(req);
@@ -97,6 +98,7 @@ Be professional, factual, and concise. Do not invent details not present in the 
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-cache",
+      ...(isDemoMode() ? { "X-Demo-Mode": "true" } : {}),
     },
   });
 }
