@@ -124,6 +124,9 @@ export interface AuditLogEntry {
   entityId: string;
   details: string;
   ipAddress: string;
+  previousStatus?: string;
+  newStatus?: string;
+  reason?: string;
 }
 
 export const USERS: User[] = [

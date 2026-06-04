@@ -1,35 +1,54 @@
 "use client";
 import { use, useState } from "react";
-import { CASES, ALERTS, CUSTOMERS, TRANSACTIONS, AUDIT_LOG, SAR_REVIEWS } from "@/lib/mock-data";
+import { useStore } from "@/lib/store";
+import { CUSTOMERS, TRANSACTIONS } from "@/lib/mock-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { StatusBadge, PriorityBadge, RiskBadge } from "@/components/ui/badge";
-import { Modal } from "@/components/ui/modal";
+import {
+  AddNoteModal, RequestEDDModal, EscalateCaseModal,
+  RecommendSARModal, CloseCaseModal, FalsePositiveCaseModal, LinkAlertModal,
+} from "@/components/cases/CaseActionModals";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import {
   ArrowLeft, ExternalLink, Plus, GitBranch, ClipboardList, FileText, XCircle,
-  CheckCircle, Clock
+  CheckCircle, Clock, AlertTriangle, Link2,
 } from "lucide-react";
 import Link from "next/link";
 
+type ModalType = "note" | "edd" | "escalate" | "sar" | "close" | "falsepositive" | "link" | null;
+
 export default function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const caseData = CASES.find(c => c.id === id);
-  const [noteModal, setNoteModal] = useState(false);
-  const [noteText, setNoteText] = useState("");
+  const { state } = useStore();
+  const [activeModal, setActiveModal] = useState<ModalType>(null);
 
+  const caseData = state.cases.find(c => c.id === id);
   if (!caseData) return <div className="p-8 text-slate-500">Case not found.</div>;
 
   const customer = CUSTOMERS.find(c => c.id === caseData.customerId);
-  const linkedAlerts = ALERTS.filter(a => caseData.alertIds.includes(a.id));
-  const allCustomerAlerts = ALERTS.filter(a => a.customerId === caseData.customerId);
+  const linkedAlerts = state.alerts.filter(a => caseData.alertIds.includes(a.id));
+  const allCustomerAlerts = state.alerts.filter(a => a.customerId === caseData.customerId);
   const transactions = TRANSACTIONS.filter(t => t.customerId === caseData.customerId).slice(0, 8);
-  const auditEntries = AUDIT_LOG.filter(e => e.entityId === id || e.entityId === caseData.customerId).slice(0, 8);
-  const sarReview = SAR_REVIEWS.find(s => s.caseId === id);
+  const auditEntries = state.auditLog.filter(e => e.entityId === id || e.entityId === caseData.customerId).slice(0, 10);
+  const sarReview = state.sarReviews.find(s => s.caseId === id);
+  const isClosed = caseData.status === "Closed";
+
+  function open(m: ModalType) { setActiveModal(m); }
+  function close() { setActiveModal(null); }
 
   return (
     <div className="space-y-5 max-w-6xl">
+      {/* Modals */}
+      <AddNoteModal caseId={activeModal === "note" ? id : null} onClose={close} />
+      <RequestEDDModal caseId={activeModal === "edd" ? id : null} onClose={close} />
+      <EscalateCaseModal caseId={activeModal === "escalate" ? id : null} onClose={close} />
+      <RecommendSARModal caseId={activeModal === "sar" ? id : null} onClose={close} />
+      <CloseCaseModal caseId={activeModal === "close" ? id : null} onClose={close} />
+      <FalsePositiveCaseModal caseId={activeModal === "falsepositive" ? id : null} onClose={close} />
+      <LinkAlertModal caseId={activeModal === "link" ? id : null} onClose={close} />
+
       <div className="flex items-center gap-3">
         <Link href="/cases"><Button variant="ghost" size="sm"><ArrowLeft className="w-4 h-4" /> Back</Button></Link>
         <div className="flex-1">
@@ -41,15 +60,24 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           </div>
           <p className="text-sm text-slate-500 mt-0.5">{caseData.customerName} · Assigned to {caseData.assignedTo}</p>
         </div>
-        <div className="flex gap-2 flex-wrap justify-end">
-          <Button variant="outline" size="sm" onClick={() => setNoteModal(true)}><Plus className="w-3.5 h-3.5" /> Add Note</Button>
-          <Button variant="outline" size="sm"><GitBranch className="w-3.5 h-3.5" /> Escalate</Button>
-          <Button variant="outline" size="sm"><ClipboardList className="w-3.5 h-3.5" /> Request EDD</Button>
-          <Button variant="outline" size="sm"><FileText className="w-3.5 h-3.5" /> Recommend SAR</Button>
-          {caseData.status !== "Closed" && (
-            <Button variant="danger" size="sm"><XCircle className="w-3.5 h-3.5" /> Close Case</Button>
-          )}
-        </div>
+        {!isClosed && (
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => open("note")}><Plus className="w-3.5 h-3.5" /> Add Note</Button>
+            <Button variant="outline" size="sm" onClick={() => open("link")}><Link2 className="w-3.5 h-3.5" /> Link Alert</Button>
+            <Button variant="outline" size="sm" onClick={() => open("edd")}><ClipboardList className="w-3.5 h-3.5" /> Request EDD</Button>
+            <Button variant="outline" size="sm" onClick={() => open("escalate")}><GitBranch className="w-3.5 h-3.5" /> Escalate</Button>
+            {!caseData.sarStatus && (
+              <Button variant="outline" size="sm" onClick={() => open("sar")}><FileText className="w-3.5 h-3.5" /> Recommend SAR</Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => open("falsepositive")}><AlertTriangle className="w-3.5 h-3.5" /> False Positive</Button>
+            <Button variant="danger" size="sm" onClick={() => open("close")}><XCircle className="w-3.5 h-3.5" /> Close Case</Button>
+          </div>
+        )}
+        {isClosed && (
+          <div className="px-3 py-1.5 rounded-lg bg-slate-100 text-xs text-slate-500 font-medium">
+            Case closed {caseData.closedDate ? formatDate(caseData.closedDate) : ""}
+          </div>
+        )}
       </div>
 
       {/* Summary Row */}
@@ -88,18 +116,16 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                 </Link>
                 <p className="text-xs text-slate-500">{customer.type}</p>
                 <div className="space-y-1.5 mt-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-slate-400">Risk</span>
-                    <StatusBadge status={customer.riskRating} />
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-slate-400">KYC</span>
-                    <StatusBadge status={customer.kycStatus} />
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-slate-400">Screening</span>
-                    <StatusBadge status={customer.screeningStatus} />
-                  </div>
+                  {[
+                    { label: "Risk", value: customer.riskRating },
+                    { label: "KYC", value: customer.kycStatus },
+                    { label: "Screening", value: customer.screeningStatus },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex justify-between items-center">
+                      <span className="text-[10px] text-slate-400">{label}</span>
+                      <StatusBadge status={value} />
+                    </div>
+                  ))}
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] text-slate-400">Volume</span>
                     <span className="text-xs font-semibold text-slate-700">{formatCurrency(customer.totalVolume)}</span>
@@ -122,6 +148,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
 
         <TabsContent value="alerts">
           <Card className="overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between py-3">
+              <CardTitle>Linked Alerts</CardTitle>
+              {!isClosed && <Button variant="outline" size="sm" onClick={() => open("link")}><Link2 className="w-3.5 h-3.5" /> Link Alert</Button>}
+            </CardHeader>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -133,9 +163,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {linkedAlerts.length === 0 && (
-                    <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-slate-400">No linked alerts. All customer alerts shown below.</td></tr>
+                    <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-slate-400">No linked alerts yet.</td></tr>
                   )}
-                  {(linkedAlerts.length > 0 ? linkedAlerts : allCustomerAlerts.slice(0, 5)).map(a => (
+                  {(linkedAlerts.length > 0 ? linkedAlerts : allCustomerAlerts.slice(0, 3)).map(a => (
                     <tr key={a.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3"><Link href={`/alerts/${a.id}`} className="font-mono text-xs text-blue-600 font-medium">{a.id}</Link></td>
                       <td className="px-4 py-3 text-slate-700">{a.type}</td>
@@ -187,7 +217,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
             {caseData.notes.length === 0 && (
               <Card><CardContent className="py-8 text-center text-sm text-slate-400">No notes yet. Add a note to document your investigation.</CardContent></Card>
             )}
-            {caseData.notes.map(note => (
+            {[...caseData.notes].reverse().map(note => (
               <Card key={note.id}>
                 <CardContent className="py-4">
                   <div className="flex items-start gap-3">
@@ -195,7 +225,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                       {note.author.split(" ").map(n => n[0]).join("").slice(0, 2)}
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-slate-900">{note.author}</span>
                         <StatusBadge status={note.type} />
                         <span className="text-xs text-slate-400 ml-auto">{new Date(note.timestamp).toLocaleString()}</span>
@@ -206,7 +236,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                 </CardContent>
               </Card>
             ))}
-            <Button variant="outline" onClick={() => setNoteModal(true)}><Plus className="w-4 h-4" /> Add Note</Button>
+            {!isClosed && (
+              <Button variant="outline" onClick={() => open("note")}><Plus className="w-4 h-4" /> Add Note</Button>
+            )}
           </div>
         </TabsContent>
 
@@ -218,13 +250,15 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                 <div className="text-center py-8">
                   <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                   <p className="text-sm text-slate-500">No SAR review initiated for this case.</p>
-                  <Button variant="outline" className="mt-4">Recommend SAR Review</Button>
+                  {!isClosed && (
+                    <Button variant="outline" className="mt-4" onClick={() => open("sar")}>Recommend SAR Review</Button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center gap-3">
                     <StatusBadge status={sarReview.status} />
-                    <span className="text-sm text-slate-500">SAR {sarReview.id}</span>
+                    <span className="text-sm text-slate-500">{sarReview.id}</span>
                   </div>
                   <div className="grid grid-cols-3 gap-4">
                     <div>
@@ -245,7 +279,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                     </div>
                     {sarReview.finalDecisionMaker && (
                       <div>
-                        <p className="text-xs text-slate-400">Final Decision Maker</p>
+                        <p className="text-xs text-slate-400">Decision Maker</p>
                         <p className="text-sm font-medium text-slate-700 mt-0.5">{sarReview.finalDecisionMaker}</p>
                       </div>
                     )}
@@ -262,21 +296,24 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                       <p className="text-sm text-slate-700 leading-relaxed">{sarReview.narrative}</p>
                     </div>
                   )}
-                  {/* SAR Workflow Steps */}
+                  {/* Workflow */}
                   <div className="mt-4 pt-4 border-t border-slate-100">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Workflow Status</p>
                     <div className="flex gap-2 flex-wrap">
                       {[
                         { step: "Pending Review", icon: Clock, done: true },
-                        { step: "SAR Recommended", icon: FileText, done: ["SAR Recommended", "SAR Approved", "SAR Declined", "Filed", "Continuing Review"].includes(sarReview.status) },
-                        { step: "BSA Decision", icon: CheckCircle, done: ["SAR Approved", "SAR Declined", "Filed", "Continuing Review"].includes(sarReview.status) },
-                        { step: "Filed", icon: CheckCircle, done: ["Filed"].includes(sarReview.status) },
+                        { step: "SAR Recommended", icon: FileText, done: ["SAR Recommended", "SAR Approved", "SAR Declined", "Filed"].includes(sarReview.status) },
+                        { step: "BSA Decision", icon: CheckCircle, done: ["SAR Approved", "SAR Declined", "Filed"].includes(sarReview.status) },
+                        { step: "Filed", icon: CheckCircle, done: sarReview.status === "Filed" },
                       ].map(({ step, icon: Icon, done }) => (
                         <div key={step} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${done ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-400"}`}>
                           <Icon className="w-3.5 h-3.5" /> {step}
                         </div>
                       ))}
                     </div>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <Link href="/sar-reviews"><Button variant="outline" size="sm"><ExternalLink className="w-3.5 h-3.5" /> View in SAR Tracker</Button></Link>
                   </div>
                 </div>
               )}
@@ -288,18 +325,24 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           <Card>
             <CardHeader><CardTitle>Audit Log</CardTitle></CardHeader>
             <CardContent className="space-y-3">
+              {auditEntries.length === 0 && <p className="text-sm text-slate-400">No audit entries found.</p>}
               {auditEntries.map(entry => (
                 <div key={entry.id} className="flex gap-3 pb-3 border-b border-slate-50 last:border-0">
                   <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs font-semibold text-slate-600 shrink-0">
-                    {entry.actor.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                    {entry.actor.split(" ").map((n: string) => n[0]).join("").slice(0, 2)}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-medium text-slate-900">{entry.action}</p>
-                      <span className="text-[10px] text-slate-400">{entry.entityType} {entry.entityId}</span>
+                      {entry.previousStatus && entry.newStatus && (
+                        <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                          {entry.previousStatus} → {entry.newStatus}
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-500">{entry.details}</p>
-                    <p className="text-[10px] text-slate-400 mt-1">{entry.actor} · {entry.actorRole} · {new Date(entry.timestamp).toLocaleString()}</p>
+                    {entry.reason && <p className="text-xs text-slate-400 italic">Reason: {entry.reason}</p>}
+                    <p className="text-[10px] text-slate-400 mt-0.5">{entry.actor} · {entry.actorRole} · {new Date(entry.timestamp).toLocaleString()}</p>
                   </div>
                 </div>
               ))}
@@ -307,31 +350,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           </Card>
         </TabsContent>
       </Tabs>
-
-      <Modal isOpen={noteModal} onClose={() => setNoteModal(false)} title="Add Investigation Note">
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs font-medium text-slate-600">Note Type</label>
-            <select className="mt-1 w-full px-3 py-2 text-sm border border-slate-200 rounded-md">
-              {["Note", "Escalation", "EDD Request", "SAR Recommendation", "Status Change"].map(t => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-600">Content</label>
-            <textarea
-              value={noteText}
-              onChange={e => setNoteText(e.target.value)}
-              rows={4}
-              className="mt-1 w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Document your findings and actions..."
-            />
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button variant="secondary" onClick={() => setNoteModal(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => setNoteModal(false)}>Save Note</Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

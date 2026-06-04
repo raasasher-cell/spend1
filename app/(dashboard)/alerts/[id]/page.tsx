@@ -1,25 +1,44 @@
 "use client";
-import { use } from "react";
-import { ALERTS, CUSTOMERS, CASES, TRANSACTIONS } from "@/lib/mock-data";
+import { use, useState } from "react";
+import { useStore } from "@/lib/store";
+import { CUSTOMERS, TRANSACTIONS } from "@/lib/mock-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PriorityBadge, StatusBadge, RiskBadge } from "@/components/ui/badge";
 import { formatDate, formatCurrency, isOverdue } from "@/lib/utils";
-import { ArrowLeft, AlertTriangle, GitBranch, XCircle, UserPlus, ExternalLink } from "lucide-react";
+import {
+  AssignAlertModal, CloseAlertModal, FalsePositiveAlertModal,
+  EscalateToCaseModal, ChangeStatusModal,
+} from "@/components/alerts/AlertActionModals";
+import { ArrowLeft, AlertTriangle, GitBranch, XCircle, UserPlus, ExternalLink, ThumbsDown, RefreshCw } from "lucide-react";
 import Link from "next/link";
+
+type ModalType = "assign" | "close" | "falsepositive" | "escalate" | "status" | null;
 
 export default function AlertDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const alert = ALERTS.find(a => a.id === id);
+  const { state } = useStore();
+  const [activeModal, setActiveModal] = useState<ModalType>(null);
+
+  const alert = state.alerts.find(a => a.id === id);
   if (!alert) return <div className="p-8 text-slate-500">Alert not found.</div>;
 
   const customer = CUSTOMERS.find(c => c.id === alert.customerId);
-  const linkedCase = alert.caseId ? CASES.find(c => c.id === alert.caseId) : null;
+  const linkedCase = alert.caseId ? state.cases.find(c => c.id === alert.caseId) : null;
   const relatedTransactions = TRANSACTIONS.filter(t => t.customerId === alert.customerId).slice(0, 5);
+  const relatedAudit = state.auditLog.filter(e => e.entityId === alert.id).slice(0, 6);
   const overdue = isOverdue(alert.slaDue);
+  const isActive = alert.status === "Open" || alert.status === "In Review";
 
   return (
     <div className="space-y-5 max-w-5xl">
+      {/* Modals */}
+      <AssignAlertModal alertId={activeModal === "assign" ? id : null} onClose={() => setActiveModal(null)} />
+      <CloseAlertModal alertId={activeModal === "close" ? id : null} onClose={() => setActiveModal(null)} />
+      <FalsePositiveAlertModal alertId={activeModal === "falsepositive" ? id : null} onClose={() => setActiveModal(null)} />
+      <EscalateToCaseModal alertId={activeModal === "escalate" ? id : null} onClose={() => setActiveModal(null)} />
+      <ChangeStatusModal alertId={activeModal === "status" ? id : null} onClose={() => setActiveModal(null)} />
+
       <div className="flex items-center gap-3">
         <Link href="/alerts"><Button variant="ghost" size="sm"><ArrowLeft className="w-4 h-4" /> Back</Button></Link>
         <div className="flex-1">
@@ -31,12 +50,14 @@ export default function AlertDetailPage({ params }: { params: Promise<{ id: stri
           </div>
           <p className="text-sm text-slate-600 mt-0.5">{alert.type} · {alert.source}</p>
         </div>
-        <div className="flex gap-2">
-          {alert.status === "Open" && (
+        <div className="flex gap-2 flex-wrap justify-end">
+          {isActive && (
             <>
-              <Button variant="outline" size="sm"><UserPlus className="w-4 h-4" /> Assign</Button>
-              <Button variant="outline" size="sm"><GitBranch className="w-4 h-4" /> Escalate to Case</Button>
-              <Button variant="danger" size="sm"><XCircle className="w-4 h-4" /> Close Alert</Button>
+              <Button variant="outline" size="sm" onClick={() => setActiveModal("assign")}><UserPlus className="w-4 h-4" /> Assign</Button>
+              <Button variant="outline" size="sm" onClick={() => setActiveModal("status")}><RefreshCw className="w-4 h-4" /> Status</Button>
+              <Button variant="outline" size="sm" onClick={() => setActiveModal("escalate")}><GitBranch className="w-4 h-4" /> Escalate to Case</Button>
+              <Button variant="outline" size="sm" onClick={() => setActiveModal("falsepositive")}><ThumbsDown className="w-4 h-4" /> False Positive</Button>
+              <Button variant="danger" size="sm" onClick={() => setActiveModal("close")}><XCircle className="w-4 h-4" /> Close Alert</Button>
             </>
           )}
         </div>
@@ -66,7 +87,9 @@ export default function AlertDetailPage({ params }: { params: Promise<{ id: stri
               </div>
               <div>
                 <p className="text-xs text-slate-400">Assigned To</p>
-                <p className="text-sm font-medium text-slate-700 mt-1">{alert.assignedTo ?? "Unassigned"}</p>
+                <button className="text-sm font-medium text-blue-600 hover:underline mt-1" onClick={() => setActiveModal("assign")}>
+                  {alert.assignedTo ?? <span className="text-slate-400 italic text-xs">Unassigned — click to assign</span>}
+                </button>
               </div>
               {alert.caseId && (
                 <div>
@@ -92,22 +115,10 @@ export default function AlertDetailPage({ params }: { params: Promise<{ id: stri
                   <p className="text-xs text-slate-500 mt-0.5">{customer.type}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="text-[10px] text-slate-400">Risk Rating</p>
-                    <StatusBadge status={customer.riskRating} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400">KYC</p>
-                    <StatusBadge status={customer.kycStatus} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400">Screening</p>
-                    <StatusBadge status={customer.screeningStatus} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400">Status</p>
-                    <StatusBadge status={customer.status} />
-                  </div>
+                  <div><p className="text-[10px] text-slate-400">Risk Rating</p><StatusBadge status={customer.riskRating} /></div>
+                  <div><p className="text-[10px] text-slate-400">KYC</p><StatusBadge status={customer.kycStatus} /></div>
+                  <div><p className="text-[10px] text-slate-400">Screening</p><StatusBadge status={customer.screeningStatus} /></div>
+                  <div><p className="text-[10px] text-slate-400">Status</p><StatusBadge status={customer.status} /></div>
                 </div>
                 <div className="pt-2 border-t border-slate-100">
                   <p className="text-[10px] text-slate-400">Total Volume</p>
@@ -126,9 +137,9 @@ export default function AlertDetailPage({ params }: { params: Promise<{ id: stri
             <div className="flex items-center justify-between">
               <div>
                 <Link href={`/cases/${linkedCase.id}`} className="text-sm font-semibold text-blue-600 hover:underline">{linkedCase.id}</Link>
-                <p className="text-sm text-slate-700 mt-1">{linkedCase.description}</p>
+                <p className="text-sm text-slate-700 mt-1 max-w-xl">{linkedCase.description}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 shrink-0 ml-4">
                 <StatusBadge status={linkedCase.status} />
                 <PriorityBadge priority={linkedCase.priority} />
               </div>
@@ -143,12 +154,9 @@ export default function AlertDetailPage({ params }: { params: Promise<{ id: stri
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">ID</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Type</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Amount</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Counterparty</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Date</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Status</th>
+                {["ID", "Type", "Amount", "Counterparty", "Date", "Status"].map(h => (
+                  <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -166,6 +174,31 @@ export default function AlertDetailPage({ params }: { params: Promise<{ id: stri
           </table>
         </CardContent>
       </Card>
+
+      {relatedAudit.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Audit Trail for this Alert</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {relatedAudit.map(entry => (
+              <div key={entry.id} className="flex gap-3 pb-3 border-b border-slate-50 last:border-0">
+                <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-xs font-semibold text-slate-500 shrink-0">
+                  {entry.actor.split(" ").map((n: string) => n[0]).join("").slice(0, 2)}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-slate-900">{entry.action}</p>
+                    {entry.previousStatus && entry.newStatus && (
+                      <span className="text-[10px] text-slate-400">{entry.previousStatus} → {entry.newStatus}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500">{entry.details}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{entry.actor} · {new Date(entry.timestamp).toLocaleString()}</p>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
