@@ -8,10 +8,11 @@ datasource db {
 }
 
 model User {
-  id    String @id
-  name  String
-  email String @unique
-  role  String
+  id           String @id
+  name         String
+  email        String @unique
+  role         String
+  passwordHash String?
 }
 
 model Customer {
@@ -78,12 +79,13 @@ model Case {
 }
 
 model CaseNote {
-  id        String @id
-  caseId    String
-  author    String
-  content   String
-  timestamp String
-  type      String
+  id         String @id
+  caseId     String
+  author     String
+  authorRole String @default("")
+  content    String
+  timestamp  String
+  type       String
 
   case Case @relation(fields: [caseId], references: [id])
 }

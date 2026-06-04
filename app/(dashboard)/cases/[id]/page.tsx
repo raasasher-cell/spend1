@@ -11,6 +11,7 @@ import {
   RecommendSARModal, CloseCaseModal, FalsePositiveCaseModal, LinkAlertModal,
 } from "@/components/cases/CaseActionModals";
 import { formatDate, formatCurrency } from "@/lib/utils";
+import { CaseSummaryPanel } from "@/components/cases/CaseSummaryPanel";
 import {
   ArrowLeft, ExternalLink, Plus, GitBranch, ClipboardList, FileText, XCircle,
   CheckCircle, Clock, AlertTriangle, Link2,
@@ -144,6 +145,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           <TabsTrigger value="notes">Notes ({caseData.notes.length})</TabsTrigger>
           <TabsTrigger value="sar">SAR Decision</TabsTrigger>
           <TabsTrigger value="audit">Audit Log</TabsTrigger>
+          <TabsTrigger value="ai-summary">✦ AI Summary</TabsTrigger>
         </TabsList>
 
         <TabsContent value="alerts">
@@ -348,6 +350,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
               ))}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="ai-summary">
+          <CaseSummaryPanel caseId={caseData.id} />
         </TabsContent>
       </Tabs>
     </div>

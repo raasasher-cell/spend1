@@ -1,9 +1,15 @@
 import path from "path";
+import { createHash } from "crypto";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "../lib/generated/prisma/client";
 import {
   USERS, CUSTOMERS, ALERTS, CASES, SAR_REVIEWS, TRANSACTIONS, AUDIT_LOG,
 } from "../lib/mock-data";
+
+const DEMO_PASSWORD = "riskops2026";
+function hashPassword(p: string): string {
+  return createHash("sha256").update(`riskops:${p}`).digest("hex");
+}
 
 const dbPath = path.resolve(process.cwd(), "dev.db");
 const adapter = new PrismaLibSql({ url: `file://${dbPath}` });
@@ -24,8 +30,9 @@ async function main() {
   ]);
 
   // Users
+  const pwHash = hashPassword(DEMO_PASSWORD);
   await prisma.user.createMany({
-    data: USERS.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
+    data: USERS.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role, passwordHash: pwHash })),
   });
 
   // Customers (strip derived openAlerts/openCases — live computed)
@@ -76,6 +83,7 @@ async function main() {
         id: n.id,
         caseId: n.caseId,
         author: n.author,
+        authorRole: "",
         content: n.content,
         timestamp: n.timestamp,
         type: n.type,

@@ -59,7 +59,8 @@ export type AppAction =
   | { type: "FILE_SAR"; sarId: string; filingRef: string; continuingSarDate?: string }
   // UI
   | { type: "ADD_TOAST"; toast: Omit<AppToast, "id"> }
-  | { type: "REMOVE_TOAST"; toastId: string };
+  | { type: "REMOVE_TOAST"; toastId: string }
+  | { type: "SET_CURRENT_USER"; user: User };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -316,6 +317,8 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, toasts: [...state.toasts, { ...action.toast, id: toastId() }] };
     case "REMOVE_TOAST":
       return { ...state, toasts: state.toasts.filter(t => t.id !== action.toastId) };
+    case "SET_CURRENT_USER":
+      return { ...state, currentUser: action.user };
     default:
       return state;
   }
@@ -442,7 +445,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Wrap dispatch: optimistic update first, then background API sync
   const dispatch: React.Dispatch<AppAction> = useCallback((action: AppAction) => {
     rawDispatch(action);
-    if (action.type !== "ADD_TOAST" && action.type !== "REMOVE_TOAST" && action.type !== "INITIALIZE") {
+    if (action.type !== "ADD_TOAST" && action.type !== "REMOVE_TOAST" && action.type !== "INITIALIZE" && action.type !== "SET_CURRENT_USER") {
       syncActionToApi(action, stateRef.current).catch(console.error);
     }
   }, []);
@@ -452,11 +455,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     async function init() {
       try {
-        const [alertsRes, casesRes, sarRes, auditRes] = await Promise.all([
+        const [alertsRes, casesRes, sarRes, auditRes, meRes] = await Promise.all([
           fetch("/api/alerts?pageSize=100").then(r => r.json()),
           fetch("/api/cases?pageSize=50").then(r => r.json()),
           fetch("/api/sar-reviews").then(r => r.json()),
           fetch("/api/audit-log?pageSize=100").then(r => r.json()),
+          fetch("/api/auth/me").then(r => r.ok ? r.json() : null),
         ]);
         if (cancelled) return;
 
@@ -474,6 +478,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           sarReviews: sarRes ?? [],
           auditLog: auditRes.entries ?? [],
         });
+        if (meRes) {
+          const sessionUser: User = { id: meRes.userId, name: meRes.name, email: meRes.email, role: meRes.role };
+          rawDispatch({ type: "SET_CURRENT_USER", user: sessionUser });
+        }
       } catch {
         // DB unavailable — stay on mock data, mark loading done
         rawDispatch({ type: "INITIALIZE", alerts: INITIAL_ALERTS, cases: INITIAL_CASES, sarReviews: INITIAL_SAR_REVIEWS, auditLog: INITIAL_AUDIT_LOG });

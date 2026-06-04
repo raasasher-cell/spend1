@@ -44,14 +44,32 @@ const vendors = [
   { name: "FinCEN BSA-Track", type: "SAR Filing", status: "Connected", lastSync: "2026-06-01" },
 ];
 
+type VendorPingResult = { latencyMs: number; version: string; status: string } | null;
+
 export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [vendorPing, setVendorPing] = useState<Record<string, VendorPingResult | "loading">>({});
 
   useEffect(() => {
     fetch("/api/users")
       .then(r => r.json())
       .then(data => setUsers(Array.isArray(data) ? data : []));
   }, []);
+
+  async function pingVendor(name: string) {
+    setVendorPing(p => ({ ...p, [name]: "loading" }));
+    try {
+      const res = await fetch("/api/vendor/ping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendor: name }),
+      });
+      const data = await res.json();
+      setVendorPing(p => ({ ...p, [name]: data }));
+    } catch {
+      setVendorPing(p => ({ ...p, [name]: null }));
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -236,20 +254,34 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {vendors.map((v, i) => (
+                  {vendors.map((v, i) => {
+                    const ping = vendorPing[v.name];
+                    return (
                     <tr key={i} className="hover:bg-slate-50">
                       <td className="px-4 py-3 font-medium text-slate-700">{v.name}</td>
                       <td className="px-4 py-3 text-xs text-slate-500">{v.type}</td>
                       <td className="px-4 py-3"><StatusBadge status={v.status === "Connected" ? "Active" : "Pending"} /></td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{v.lastSync}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        {ping && ping !== "loading" ? (
+                          <span className="text-green-600 font-medium">{ping.latencyMs}ms</span>
+                        ) : v.lastSync}
+                      </td>
                       <td className="px-4 py-3">
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 items-center">
                           <Button variant="ghost" size="sm">Configure</Button>
-                          {v.status === "Connected" && <Button variant="ghost" size="sm">Test</Button>}
+                          {v.status === "Connected" && (
+                            <Button variant="ghost" size="sm" onClick={() => pingVendor(v.name)} disabled={ping === "loading"}>
+                              {ping === "loading" ? "Testing..." : "Test"}
+                            </Button>
+                          )}
+                          {ping && ping !== "loading" && (
+                            <span className="text-[10px] text-green-600 font-semibold">✓ OK</span>
+                          )}
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </CardContent>
