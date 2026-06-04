@@ -1,10 +1,27 @@
+// WARNING: This route sends case data (alerts, notes, descriptions) to the Anthropic API.
+// Before enabling in production, ensure:
+//   1. Your vendor agreement with Anthropic permits processing financial compliance data.
+//   2. You have reviewed applicable data privacy regulations (GDPR, CCPA, GLBA, etc.).
+//   3. Customer PII is minimized — this route uses case IDs and descriptions, not raw PII.
+//   4. ANTHROPIC_API_KEY is stored securely and never committed to source control.
+// This feature is disabled when ANTHROPIC_API_KEY is not set.
+
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
-
-const client = new Anthropic();
+import { requireSession } from "@/lib/auth-guard";
 
 export async function POST(req: NextRequest) {
+  const { forbidden } = await requireSession(req);
+  if (forbidden) return forbidden;
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json(
+      { error: "AI case summary is not configured. Set ANTHROPIC_API_KEY in your environment variables." },
+      { status: 503 }
+    );
+  }
+
   const { caseId } = await req.json();
   if (!caseId) return NextResponse.json({ error: "caseId required" }, { status: 400 });
 
@@ -18,6 +35,8 @@ export async function POST(req: NextRequest) {
   });
 
   if (!caseData) return NextResponse.json({ error: "Case not found" }, { status: 404 });
+
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const alertSummary = caseData.alerts.map(a =>
     `- ${a.id}: ${a.type} (${a.source}) | Risk: ${a.riskScore}/100 | Priority: ${a.priority ?? "N/A"} | Status: ${a.status} | ${a.description}`
@@ -62,19 +81,21 @@ Be professional, factual, and concise. Do not invent details not present in the 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
-      for await (const chunk of stream) {
-        if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
-          controller.enqueue(encoder.encode(chunk.delta.text));
+      try {
+        for await (const chunk of stream) {
+          if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+            controller.enqueue(encoder.encode(chunk.delta.text));
+          }
         }
+      } finally {
+        controller.close();
       }
-      controller.close();
     },
   });
 
   return new NextResponse(readable, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
-      "Transfer-Encoding": "chunked",
       "Cache-Control": "no-cache",
     },
   });

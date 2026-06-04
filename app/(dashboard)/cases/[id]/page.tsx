@@ -1,7 +1,8 @@
 "use client";
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
-import { CUSTOMERS, TRANSACTIONS } from "@/lib/mock-data";
+import { hasPermission } from "@/lib/permissions";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -20,18 +21,45 @@ import Link from "next/link";
 
 type ModalType = "note" | "edd" | "escalate" | "sar" | "close" | "falsepositive" | "link" | null;
 
+type CustomerData = {
+  id: string; name: string; type: string;
+  riskRating: string; kycStatus: string; screeningStatus: string; totalVolume: number;
+};
+
+type TxData = {
+  id: string; type: string; amount: number; currency: string;
+  counterparty: string; date: string; channel: string; status: string; flagged: boolean;
+};
+
 export default function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { state } = useStore();
+  const { user } = useCurrentUser();
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [customer, setCustomer] = useState<CustomerData | null>(null);
+  const [transactions, setTransactions] = useState<TxData[]>([]);
 
   const caseData = state.cases.find(c => c.id === id);
+
+  useEffect(() => {
+    if (!caseData?.customerId) return;
+    fetch(`/api/customers/${caseData.customerId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setCustomer(data); });
+  }, [caseData?.customerId]);
+
+  useEffect(() => {
+    if (!caseData?.customerId) return;
+    fetch(`/api/transactions?customerId=${caseData.customerId}&pageSize=8`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.transactions) setTransactions(data.transactions); });
+  }, [caseData?.customerId]);
+
   if (!caseData) return <div className="p-8 text-slate-500">Case not found.</div>;
 
-  const customer = CUSTOMERS.find(c => c.id === caseData.customerId);
+  const role = user?.role;
   const linkedAlerts = state.alerts.filter(a => caseData.alertIds.includes(a.id));
   const allCustomerAlerts = state.alerts.filter(a => a.customerId === caseData.customerId);
-  const transactions = TRANSACTIONS.filter(t => t.customerId === caseData.customerId).slice(0, 8);
   const auditEntries = state.auditLog.filter(e => e.entityId === id || e.entityId === caseData.customerId).slice(0, 10);
   const sarReview = state.sarReviews.find(s => s.caseId === id);
   const isClosed = caseData.status === "Closed";
@@ -63,15 +91,27 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
         </div>
         {!isClosed && (
           <div className="flex gap-2 flex-wrap justify-end">
-            <Button variant="outline" size="sm" onClick={() => open("note")}><Plus className="w-3.5 h-3.5" /> Add Note</Button>
-            <Button variant="outline" size="sm" onClick={() => open("link")}><Link2 className="w-3.5 h-3.5" /> Link Alert</Button>
-            <Button variant="outline" size="sm" onClick={() => open("edd")}><ClipboardList className="w-3.5 h-3.5" /> Request EDD</Button>
-            <Button variant="outline" size="sm" onClick={() => open("escalate")}><GitBranch className="w-3.5 h-3.5" /> Escalate</Button>
-            {!caseData.sarStatus && (
+            {hasPermission(role, "add_note") && (
+              <Button variant="outline" size="sm" onClick={() => open("note")}><Plus className="w-3.5 h-3.5" /> Add Note</Button>
+            )}
+            {hasPermission(role, "link_alert") && (
+              <Button variant="outline" size="sm" onClick={() => open("link")}><Link2 className="w-3.5 h-3.5" /> Link Alert</Button>
+            )}
+            {hasPermission(role, "request_edd") && (
+              <Button variant="outline" size="sm" onClick={() => open("edd")}><ClipboardList className="w-3.5 h-3.5" /> Request EDD</Button>
+            )}
+            {hasPermission(role, "escalate_case") && (
+              <Button variant="outline" size="sm" onClick={() => open("escalate")}><GitBranch className="w-3.5 h-3.5" /> Escalate</Button>
+            )}
+            {!caseData.sarStatus && hasPermission(role, "recommend_sar") && (
               <Button variant="outline" size="sm" onClick={() => open("sar")}><FileText className="w-3.5 h-3.5" /> Recommend SAR</Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => open("falsepositive")}><AlertTriangle className="w-3.5 h-3.5" /> False Positive</Button>
-            <Button variant="danger" size="sm" onClick={() => open("close")}><XCircle className="w-3.5 h-3.5" /> Close Case</Button>
+            {hasPermission(role, "mark_fp_case") && (
+              <Button variant="outline" size="sm" onClick={() => open("falsepositive")}><AlertTriangle className="w-3.5 h-3.5" /> False Positive</Button>
+            )}
+            {hasPermission(role, "close_case") && (
+              <Button variant="danger" size="sm" onClick={() => open("close")}><XCircle className="w-3.5 h-3.5" /> Close Case</Button>
+            )}
           </div>
         )}
         {isClosed && (
@@ -110,7 +150,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
         <Card>
           <CardHeader><CardTitle>Customer</CardTitle></CardHeader>
           <CardContent>
-            {customer && (
+            {customer ? (
               <div className="space-y-2">
                 <Link href={`/customers/${customer.id}`} className="text-sm font-semibold text-blue-600 hover:underline flex items-center gap-1">
                   {customer.name} <ExternalLink className="w-3 h-3" />
@@ -133,6 +173,13 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                   </div>
                 </div>
               </div>
+            ) : (
+              <div className="space-y-2">
+                <Link href={`/customers/${caseData.customerId}`} className="text-sm font-semibold text-blue-600 hover:underline flex items-center gap-1">
+                  {caseData.customerName} <ExternalLink className="w-3 h-3" />
+                </Link>
+                <p className="text-xs text-slate-400">Loading...</p>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -152,7 +199,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           <Card className="overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between py-3">
               <CardTitle>Linked Alerts</CardTitle>
-              {!isClosed && <Button variant="outline" size="sm" onClick={() => open("link")}><Link2 className="w-3.5 h-3.5" /> Link Alert</Button>}
+              {!isClosed && hasPermission(role, "link_alert") && (
+                <Button variant="outline" size="sm" onClick={() => open("link")}><Link2 className="w-3.5 h-3.5" /> Link Alert</Button>
+              )}
             </CardHeader>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -197,6 +246,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
+                  {transactions.length === 0 && (
+                    <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-400">No transactions found.</td></tr>
+                  )}
                   {transactions.map(t => (
                     <tr key={t.id} className={t.flagged ? "bg-red-50/30" : "hover:bg-slate-50"}>
                       <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{t.id}</td>
@@ -238,7 +290,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                 </CardContent>
               </Card>
             ))}
-            {!isClosed && (
+            {!isClosed && hasPermission(role, "add_note") && (
               <Button variant="outline" onClick={() => open("note")}><Plus className="w-4 h-4" /> Add Note</Button>
             )}
           </div>
@@ -252,7 +304,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                 <div className="text-center py-8">
                   <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                   <p className="text-sm text-slate-500">No SAR review initiated for this case.</p>
-                  {!isClosed && (
+                  {!isClosed && hasPermission(role, "recommend_sar") && (
                     <Button variant="outline" className="mt-4" onClick={() => open("sar")}>Recommend SAR Review</Button>
                   )}
                 </div>
@@ -298,7 +350,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                       <p className="text-sm text-slate-700 leading-relaxed">{sarReview.narrative}</p>
                     </div>
                   )}
-                  {/* Workflow */}
+                  {/* SAR workflow steps */}
                   <div className="mt-4 pt-4 border-t border-slate-100">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Workflow Status</p>
                     <div className="flex gap-2 flex-wrap">

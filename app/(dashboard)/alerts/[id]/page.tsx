@@ -1,7 +1,8 @@
 "use client";
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
-import { CUSTOMERS, TRANSACTIONS } from "@/lib/mock-data";
+import { hasPermission } from "@/lib/permissions";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PriorityBadge, StatusBadge, RiskBadge } from "@/components/ui/badge";
@@ -15,17 +16,44 @@ import Link from "next/link";
 
 type ModalType = "assign" | "close" | "falsepositive" | "escalate" | "status" | null;
 
+type CustomerData = {
+  id: string; name: string; type: string; status: string;
+  riskRating: string; kycStatus: string; screeningStatus: string; totalVolume: number;
+};
+
+type TxData = {
+  id: string; type: string; amount: number; counterparty: string;
+  date: string; status: string; flagged: boolean;
+};
+
 export default function AlertDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { state } = useStore();
+  const { user } = useCurrentUser();
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [customer, setCustomer] = useState<CustomerData | null>(null);
+  const [transactions, setTransactions] = useState<TxData[]>([]);
 
   const alert = state.alerts.find(a => a.id === id);
+
+  useEffect(() => {
+    if (!alert?.customerId) return;
+    fetch(`/api/customers/${alert.customerId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setCustomer(data); });
+  }, [alert?.customerId]);
+
+  useEffect(() => {
+    if (!alert?.customerId) return;
+    fetch(`/api/transactions?customerId=${alert.customerId}&pageSize=5`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.transactions) setTransactions(data.transactions); });
+  }, [alert?.customerId]);
+
   if (!alert) return <div className="p-8 text-slate-500">Alert not found.</div>;
 
-  const customer = CUSTOMERS.find(c => c.id === alert.customerId);
+  const role = user?.role;
   const linkedCase = alert.caseId ? state.cases.find(c => c.id === alert.caseId) : null;
-  const relatedTransactions = TRANSACTIONS.filter(t => t.customerId === alert.customerId).slice(0, 5);
   const relatedAudit = state.auditLog.filter(e => e.entityId === alert.id).slice(0, 6);
   const overdue = isOverdue(alert.slaDue);
   const isActive = alert.status === "Open" || alert.status === "In Review";
@@ -50,17 +78,25 @@ export default function AlertDetailPage({ params }: { params: Promise<{ id: stri
           </div>
           <p className="text-sm text-slate-600 mt-0.5">{alert.type} · {alert.source}</p>
         </div>
-        <div className="flex gap-2 flex-wrap justify-end">
-          {isActive && (
-            <>
+        {isActive && (
+          <div className="flex gap-2 flex-wrap justify-end">
+            {hasPermission(role, "assign_alert") && (
               <Button variant="outline" size="sm" onClick={() => setActiveModal("assign")}><UserPlus className="w-4 h-4" /> Assign</Button>
+            )}
+            {hasPermission(role, "escalate_alert") && (
               <Button variant="outline" size="sm" onClick={() => setActiveModal("status")}><RefreshCw className="w-4 h-4" /> Status</Button>
+            )}
+            {hasPermission(role, "escalate_to_case") && (
               <Button variant="outline" size="sm" onClick={() => setActiveModal("escalate")}><GitBranch className="w-4 h-4" /> Escalate to Case</Button>
+            )}
+            {hasPermission(role, "mark_fp_alert") && (
               <Button variant="outline" size="sm" onClick={() => setActiveModal("falsepositive")}><ThumbsDown className="w-4 h-4" /> False Positive</Button>
+            )}
+            {hasPermission(role, "close_alert") && (
               <Button variant="danger" size="sm" onClick={() => setActiveModal("close")}><XCircle className="w-4 h-4" /> Close Alert</Button>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -106,7 +142,7 @@ export default function AlertDetailPage({ params }: { params: Promise<{ id: stri
         <Card>
           <CardHeader><CardTitle>Customer</CardTitle></CardHeader>
           <CardContent>
-            {customer && (
+            {customer ? (
               <div className="space-y-3">
                 <div>
                   <Link href={`/customers/${customer.id}`} className="text-sm font-semibold text-blue-600 hover:underline flex items-center gap-1">
@@ -124,6 +160,13 @@ export default function AlertDetailPage({ params }: { params: Promise<{ id: stri
                   <p className="text-[10px] text-slate-400">Total Volume</p>
                   <p className="text-sm font-semibold text-slate-900">{formatCurrency(customer.totalVolume)}</p>
                 </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Link href={`/customers/${alert.customerId}`} className="text-sm font-semibold text-blue-600 hover:underline flex items-center gap-1">
+                  {alert.customerName} <ExternalLink className="w-3 h-3" />
+                </Link>
+                <p className="text-xs text-slate-400">Loading...</p>
               </div>
             )}
           </CardContent>
@@ -160,7 +203,10 @@ export default function AlertDetailPage({ params }: { params: Promise<{ id: stri
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {relatedTransactions.map(t => (
+              {transactions.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-slate-400">No transactions found.</td></tr>
+              )}
+              {transactions.map(t => (
                 <tr key={t.id} className={t.flagged ? "bg-red-50/30" : ""}>
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{t.id}</td>
                   <td className="px-4 py-2.5 text-slate-700">{t.type}</td>

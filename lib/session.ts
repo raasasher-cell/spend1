@@ -12,7 +12,14 @@ export type SessionUser = {
 };
 
 function getSecret(): Uint8Array {
-  const secret = process.env.SESSION_SECRET ?? "riskops-dev-secret-32-chars-min!!";
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("SESSION_SECRET environment variable is required in production.");
+    }
+    // Dev-only fallback — never use in production
+    return new TextEncoder().encode("riskops-dev-secret-change-in-prod-32ch");
+  }
   return new TextEncoder().encode(secret);
 }
 
@@ -45,6 +52,7 @@ export function sessionCookieOptions(value: string) {
     value,
     httpOnly: true,
     sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: MAX_AGE,
   };

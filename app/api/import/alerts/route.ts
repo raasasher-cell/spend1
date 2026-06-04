@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requirePermission } from "@/lib/auth-guard";
 
 const REQUIRED = ["customerId", "type", "source", "riskScore", "priority", "description"];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 function parseCSV(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
@@ -13,9 +15,16 @@ function parseCSV(text: string): Record<string, string>[] {
 }
 
 export async function POST(req: NextRequest) {
+  const { session, forbidden } = await requirePermission(req, "import_data");
+  if (forbidden) return forbidden;
+
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+  if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 400 });
+  if (!file.name.endsWith(".csv") && file.type !== "text/csv") {
+    return NextResponse.json({ error: "Only CSV files are accepted" }, { status: 400 });
+  }
 
   const text = await file.text();
   const rows = parseCSV(text);
@@ -64,6 +73,20 @@ export async function POST(req: NextRequest) {
   if (valid.length > 0) {
     await prisma.alert.createMany({ data: valid });
   }
+
+  await prisma.auditLogEntry.create({
+    data: {
+      id: `AUD-IMP-ALT-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actor: session!.name,
+      actorRole: session!.role,
+      action: "CSV Import: Alerts",
+      entityType: "Import",
+      entityId: "bulk",
+      details: `Imported ${valid.length} alerts from ${file.name} (${rows.length} rows, ${errors.length} errors)`,
+      ipAddress: req.headers.get("x-forwarded-for") ?? "unknown",
+    },
+  });
 
   return NextResponse.json({ imported: valid.length, errors, total: rows.length });
 }
