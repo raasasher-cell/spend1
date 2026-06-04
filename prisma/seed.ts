@@ -11,8 +11,13 @@ function hashPassword(p: string): string {
   return createHash("sha256").update(`riskops:${p}`).digest("hex");
 }
 
-const dbPath = path.resolve(process.cwd(), "dev.db");
-const adapter = new PrismaLibSql({ url: `file://${dbPath}` });
+// Supports both local SQLite (file:./dev.db) and Turso (libsql://...)
+const rawUrl = process.env.DATABASE_URL ?? "file:./dev.db";
+const url = rawUrl.startsWith("file:")
+  ? `file:${path.resolve(process.cwd(), rawUrl.slice(5))}`
+  : rawUrl;
+const authToken = process.env.TURSO_AUTH_TOKEN;
+const adapter = new PrismaLibSql({ url, ...(authToken ? { authToken } : {}) });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
