@@ -1,6 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
-import { CUSTOMERS } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -9,30 +8,60 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { Search, Eye } from "lucide-react";
 import Link from "next/link";
 
+type CustomerRow = {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  riskRating: string;
+  kycStatus: string;
+  screeningStatus: string;
+  totalVolume: number;
+  lastTransaction: string;
+  email: string;
+  _count: { alerts: number; cases: number };
+};
+
 export default function CustomersPage() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("");
   const [filterRisk, setFilterRisk] = useState("");
   const [filterKYC, setFilterKYC] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [customers, setCustomers] = useState<CustomerRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = useMemo(() => {
-    return CUSTOMERS.filter(c => {
-      const q = search.toLowerCase();
-      const matchSearch = !q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q) || c.email.toLowerCase().includes(q);
-      const matchType = !filterType || c.type === filterType;
-      const matchRisk = !filterRisk || c.riskRating === filterRisk;
-      const matchKYC = !filterKYC || c.kycStatus === filterKYC;
-      const matchStatus = !filterStatus || c.status === filterStatus;
-      return matchSearch && matchType && matchRisk && matchKYC && matchStatus;
-    });
+  useEffect(() => {
+    let cancelled = false;
+    const delay = search ? 300 : 0;
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ pageSize: "100" });
+        if (search) params.set("q", search);
+        if (filterType) params.set("type", filterType);
+        if (filterRisk) params.set("riskRating", filterRisk);
+        if (filterKYC) params.set("kycStatus", filterKYC);
+        if (filterStatus) params.set("status", filterStatus);
+        const res = await fetch(`/api/customers?${params}`);
+        const data = await res.json();
+        if (!cancelled) {
+          setCustomers(data.customers ?? []);
+          setTotal(data.total ?? 0);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    }, delay);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [search, filterType, filterRisk, filterKYC, filterStatus]);
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-slate-900">Customers</h1>
-        <p className="text-sm text-slate-500 mt-0.5">{filtered.length} customers</p>
+        <p className="text-sm text-slate-500 mt-0.5">{loading ? "Loading..." : `${total} customers`}</p>
       </div>
 
       <Card>
@@ -71,7 +100,11 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filtered.map(c => (
+              {loading ? (
+                <tr><td colSpan={11} className="px-4 py-8 text-center text-sm text-slate-400">Loading customers...</td></tr>
+              ) : customers.length === 0 ? (
+                <tr><td colSpan={11} className="px-4 py-8 text-center text-sm text-slate-400">No customers found.</td></tr>
+              ) : customers.map(c => (
                 <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
@@ -90,10 +123,10 @@ export default function CustomersPage() {
                   <td className="px-4 py-3"><StatusBadge status={c.kycStatus} /></td>
                   <td className="px-4 py-3"><StatusBadge status={c.screeningStatus} /></td>
                   <td className="px-4 py-3">
-                    <span className={`text-sm font-semibold ${c.openAlerts > 0 ? "text-red-600" : "text-slate-400"}`}>{c.openAlerts}</span>
+                    <span className={`text-sm font-semibold ${c._count.alerts > 0 ? "text-red-600" : "text-slate-400"}`}>{c._count.alerts}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-sm font-semibold ${c.openCases > 0 ? "text-orange-600" : "text-slate-400"}`}>{c.openCases}</span>
+                    <span className={`text-sm font-semibold ${c._count.cases > 0 ? "text-orange-600" : "text-slate-400"}`}>{c._count.cases}</span>
                   </td>
                   <td className="px-4 py-3 text-sm font-medium text-slate-700">{formatCurrency(c.totalVolume)}</td>
                   <td className="px-4 py-3 text-xs text-slate-500">{formatDate(c.lastTransaction)}</td>

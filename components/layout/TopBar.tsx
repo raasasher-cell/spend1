@@ -1,23 +1,42 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Bell, HelpCircle, X } from "lucide-react";
-import { ALERTS, CUSTOMERS, CASES } from "@/lib/mock-data";
 import Link from "next/link";
+
+type AlertResult = { id: string; type: string; customerName: string };
+type CustomerResult = { id: string; name: string; type: string; riskRating: string };
+type CaseResult = { id: string; status: string; customerName: string };
 
 export function TopBar() {
   const [query, setQuery] = useState("");
   const [showResults, setShowResults] = useState(false);
+  const [fetched, setFetched] = useState<{ alerts: AlertResult[]; customers: CustomerResult[]; cases: CaseResult[] }>({ alerts: [], customers: [], cases: [] });
 
-  const q = query.toLowerCase();
-  const alertResults = q.length > 1 ? ALERTS.filter(a =>
-    a.id.toLowerCase().includes(q) || a.customerName.toLowerCase().includes(q) || a.type.toLowerCase().includes(q)
-  ).slice(0, 3) : [];
-  const customerResults = q.length > 1 ? CUSTOMERS.filter(c =>
-    c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
-  ).slice(0, 3) : [];
-  const caseResults = q.length > 1 ? CASES.filter(c =>
-    c.id.toLowerCase().includes(q) || c.customerName.toLowerCase().includes(q)
-  ).slice(0, 3) : [];
+  const shouldSearch = query.length >= 2;
+  const alertResults = shouldSearch ? fetched.alerts : [];
+  const customerResults = shouldSearch ? fetched.customers : [];
+  const caseResults = shouldSearch ? fetched.cases : [];
+
+  useEffect(() => {
+    if (!shouldSearch) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const q = encodeURIComponent(query);
+        const [alertsRes, customersRes, casesRes] = await Promise.all([
+          fetch(`/api/alerts?q=${q}&pageSize=3`).then(r => r.json()),
+          fetch(`/api/customers?q=${q}&pageSize=3`).then(r => r.json()),
+          fetch(`/api/cases?q=${q}&pageSize=3`).then(r => r.json()),
+        ]);
+        if (!cancelled) {
+          setFetched({ alerts: alertsRes.alerts ?? [], customers: customersRes.customers ?? [], cases: casesRes.cases ?? [] });
+        }
+      } catch {
+        // silently ignore
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [query, shouldSearch]);
 
   const hasResults = alertResults.length + customerResults.length + caseResults.length > 0;
 

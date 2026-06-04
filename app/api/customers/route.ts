@@ -31,6 +31,14 @@ export async function GET(req: NextRequest) {
     prisma.customer.count({ where }),
     prisma.customer.findMany({
       where,
+      include: {
+        _count: {
+          select: {
+            alerts: { where: { status: { in: ["Open", "In Review", "Escalated"] } } },
+            cases: { where: { status: { not: "Closed" } } },
+          },
+        },
+      },
       orderBy: { name: "asc" },
       skip: (page - 1) * pageSize,
       take: pageSize,

@@ -1,5 +1,6 @@
 "use client";
-import { USERS } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { User } from "@/lib/mock-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -44,6 +45,14 @@ const vendors = [
 ];
 
 export default function AdminPage() {
+  const [users, setUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    fetch("/api/users")
+      .then(r => r.json())
+      .then(data => setUsers(Array.isArray(data) ? data : []));
+  }, []);
+
   return (
     <div className="space-y-4">
       <div>
@@ -77,7 +86,7 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {USERS.map(user => (
+                  {users.map(user => (
                     <tr key={user.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">

@@ -7,7 +7,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     include: {
       alerts: { orderBy: { createdDate: "desc" } },
-      cases: { orderBy: { updatedDate: "desc" }, include: { notes: true } },
+      cases: { orderBy: { updatedDate: "desc" }, include: { notes: true, alerts: { select: { id: true } } } },
       transactions: { orderBy: { date: "desc" }, take: 20 },
       sarReviews: { orderBy: { sarDeadline: "asc" } },
     },
