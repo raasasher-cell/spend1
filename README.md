@@ -41,12 +41,12 @@ All demo accounts use the password: **`riskops2026`**
 
 | Email | Role | Key Permissions |
 |---|---|---|
-| `analyst@riskops.demo` | Analyst | Triage alerts, add notes, link alerts |
-| `investigator@riskops.demo` | Senior Investigator | Full case management, EDD, recommend SAR |
-| `manager@riskops.demo` | Compliance Manager | All investigator actions + audit log access |
-| `bsa@riskops.demo` | BSA Officer | Approve/decline/file SARs |
-| `auditor@riskops.demo` | Auditor | Read-only + export |
-| `admin@riskops.demo` | Admin | Full access including user management and CSV import |
+| `d.williams@riskops.io` | Analyst | Triage alerts, add notes, link alerts |
+| `p.patel@riskops.io` | Senior Investigator | Full case management, EDD, recommend SAR |
+| `m.johnson@riskops.io` | Compliance Manager | All investigator actions + audit log access |
+| `s.chen@riskops.io` | BSA Officer | Approve/decline/file SARs |
+| `a.thompson@riskops.io` | Auditor | Read-only + export |
+| `admin@riskops.io` | Admin | Full access including user management and CSV import |
 
 ---
 
@@ -185,11 +185,11 @@ All API routes require a valid session cookie (set at login). Specific routes re
 ## Testing the Demo
 
 1. Navigate to `http://localhost:3000` — you will be redirected to `/login`
-2. Log in as `analyst@riskops.demo` / `riskops2026`
+2. Log in as `d.williams@riskops.io` / `riskops2026`
 3. Try the Alert Queue: filter by priority, close an alert, escalate to case
-4. Switch to `investigator@riskops.demo` to access case actions
-5. Try `bsa@riskops.demo` to approve a SAR in the SAR Review Tracker
-6. Log in as `admin@riskops.demo` to test CSV import (use the template from `/import`)
+4. Switch to `p.patel@riskops.io` to access full case actions
+5. Try `s.chen@riskops.io` to approve a SAR in the SAR Review Tracker
+6. Log in as `admin@riskops.io` to test CSV import (use the template from `/import`)
 7. Check the audit log in Admin → Audit Log or export it from `/export`
 
 ---
