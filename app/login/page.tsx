@@ -4,21 +4,22 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, Eye, EyeOff } from "lucide-react";
 
 const DEMO_USERS = [
-  { name: "Sarah Chen", email: "sarah.chen@riskops.io", role: "BSA Officer" },
-  { name: "Marcus Johnson", email: "marcus.johnson@riskops.io", role: "Senior Investigator" },
-  { name: "Aisha Patel", email: "aisha.patel@riskops.io", role: "Analyst" },
-  { name: "Admin User", email: "admin@riskops.io", role: "Admin" },
+  { name: "Sarah Chen",    email: "s.chen@riskops.io",    role: "BSA Officer"       },
+  { name: "Priya Patel",   email: "p.patel@riskops.io",   role: "Sr. Investigator"  },
+  { name: "Marcus Johnson",email: "m.johnson@riskops.io", role: "Compliance Mgr"    },
+  { name: "Devon Williams",email: "d.williams@riskops.io",role: "Analyst"           },
+  { name: "Admin User",    email: "admin@riskops.io",     role: "Admin"             },
 ];
 
 function LoginForm() {
-  const [email, setEmail] = useState("sarah.chen@riskops.io");
+  const router = useRouter();
+  const params = useSearchParams();
+  const from = params.get("from") ?? "/dashboard";
+  const [email, setEmail] = useState(params.get("email") ?? "s.chen@riskops.io");
   const [password, setPassword] = useState("riskops2026");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const params = useSearchParams();
-  const from = params.get("from") ?? "/dashboard";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
