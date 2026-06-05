@@ -4,10 +4,18 @@ import { PrismaClient } from "./generated/prisma/client";
 
 function createPrisma() {
   const dbUrl = process.env.DATABASE_URL ?? "file:./dev.db";
-  const resolved = dbUrl.startsWith("file:")
-    ? path.resolve(process.cwd(), dbUrl.slice(5))
-    : path.resolve(process.cwd(), dbUrl);
-  const adapter = new PrismaLibSql({ url: `file://${resolved}` });
+  const authToken = process.env.TURSO_AUTH_TOKEN;
+
+  // Local SQLite: resolve to an absolute path the libsql driver can open.
+  // Turso / remote libsql: pass the URL directly (libsql:// or https://).
+  const url = dbUrl.startsWith("file:")
+    ? `file:${path.resolve(/*turbopackIgnore: true*/ process.cwd(), dbUrl.slice(5))}`
+    : dbUrl;
+
+  const adapter = new PrismaLibSql({
+    url,
+    ...(authToken ? { authToken } : {}),
+  });
   return new PrismaClient({ adapter });
 }
 

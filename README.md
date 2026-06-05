@@ -95,10 +95,29 @@ npm start             # Start production server
 
 | Variable | Required | Description |
 |---|---|---|
-| `DATABASE_URL` | Yes | SQLite path (`file:./dev.db`) or Turso URL |
+| `DATABASE_URL` | Yes | SQLite path (`file:./dev.db`) or Turso URL (`libsql://...`) |
 | `SESSION_SECRET` | Yes (prod) | JWT signing secret — min 32 chars. **Throws in production if missing.** |
+| `TURSO_AUTH_TOKEN` | No | Turso auth token (remote/production deployments only) |
+| `DEMO_MODE` | No | Set to `"true"` to enable demo mode (see below) |
 | `ANTHROPIC_API_KEY` | No | Enables AI case summary. Feature returns 503 if not set. |
-| `DATABASE_AUTH_TOKEN` | No | Turso auth token (remote deployments only) |
+
+### Demo Mode (`DEMO_MODE=true`)
+
+Demo mode makes the app safe for private demos without disabling normal workflows.
+
+**What still works in demo mode:**
+- KYC verification (mock vendor), sanctions screening, alert assignment and status changes
+- Escalating alerts to cases, adding case notes, requesting EDD
+- Recommending SAR review, approving/declining as BSA Officer, marking SAR as filed
+- Importing CSV demo files, exporting audit packages, generating audit log entries
+- AI case summary (if `ANTHROPIC_API_KEY` is set — shows a mock-data warning)
+
+**What is blocked in demo mode:**
+- Deleting users, customers, alerts, cases, SAR reviews, or audit log entries
+- Wiping or resetting the database from the UI
+- Changing production/security-sensitive settings or vendor API credentials
+
+**Visual indicator:** A persistent amber banner — *"Demo Environment — Mock Data Only — Not for Production Use"* — is shown on every dashboard page. The AI Case Summary panel displays an additional warning when a summary is generated.
 
 ---
 
